@@ -4,7 +4,7 @@
 // between ranks, and parallel runs in one gap get their own tracks.
 //
 // Input:  nodes  [{ id, w, h, group }]   `group` is the id of the innermost group, or null.
-//         groups [{ id, parent }]
+//         groups [{ id, parent, pkg, tab }]  `tab` is the size { w, h } of the tab with the name of the group.
 //         edges  [{ id, from, to, label: { w, h } | null, kind }]  `from` and `to` are shape or group ids.
 //                `kind` tells connectors apart: connectors of one kind can share a port, like a bus.
 //         A node can have `slide`: 'all' when a connector can meet any side away from its middle, or 'tb'
@@ -29,6 +29,8 @@ const TRACK_MAX = 24;
 const ZONE_PAD = 24, ZONE_PAD_TOP = 44;
 // The space that a run keeps from a shape or a label that it passes.
 const PASS = 8;
+// The space that a run keeps from the tab with the name of a zone.
+const TAB_CLEAR = 4;
 const GRID = 10;
 const round = v => Math.round(v / GRID) * GRID;
 
@@ -90,8 +92,10 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
     const outs = new Map(), ins = new Map(), add = (m, k, x) => m.set(k, [...(m.get(k) || []), x]);
     forward.forEach(f => { add(outs, f.v, f); add(ins, f.w, f); });
     const straight = f => Math.abs(at(f.v).x - at(f.w).x) < 0.5;
-    // The channel points of all connectors, so a shape does not move onto one.
-    const points = laid.flatMap(({ e, v, w }) => { const d = gr.edge({ v, w, name: e.id }); return d && d.points ? d.points.slice(1, -1).map(p => ({ ...frame.to(p), id: e.id })) : []; });
+    // The channel points of the connectors that go down the ranks, so a shape does not move onto one. A connector
+    // that closes a cycle gets its own channel beside its shapes later, so its points do not count.
+    const points = laid.filter(({ v, w }) => at(v).y < at(w).y - 1)
+      .flatMap(({ e, v, w }) => { const d = gr.edge({ v, w, name: e.id }); return d && d.points ? d.points.slice(1, -1).map(p => ({ ...frame.to(p), id: e.id })) : []; });
     const room = (id, x) => {
       const c = at(id), { w, h } = size(byId.get(id));
       const others = nodes.filter(n => n.id !== id && Math.abs(at(n.id).y - c.y) < (h + size(n).h) / 2);
@@ -126,17 +130,32 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
     }
   }
   // The zone of each group, in the frame of the sheet: the box around its shapes and inner zones.
-  function zoneBoxes(gr) {
+  function zoneBoxes(gr, laid) {
     const depth = g => { let d = 0; for (let x = groupById.get(g.parent); x; x = groupById.get(x.parent)) d++; return d; };
+    const within = (g, id) => { for (let x = groupById.get(g); x; x = groupById.get(x.parent)) if (x.id === id) return true; return false; };
+    const shape = n => { const d = gr.node(n.id); return { x: round(d.x) - n.w / 2, y: round(d.y) - n.h / 2, w: n.w, h: n.h }; };
     const zones = new Map();
     [...groups].sort((a, b) => depth(b) - depth(a)).forEach(grp => {
-      const kids = [
-        ...nodes.filter(n => n.group === grp.id).map(n => { const d = gr.node(n.id); return { x: round(d.x) - n.w / 2, y: round(d.y) - n.h / 2, w: n.w, h: n.h }; }),
-        ...groups.filter(x => x.parent === grp.id).map(x => zones.get(x.id)).filter(Boolean)
-      ];
+      const kids = [...nodes.filter(n => n.group === grp.id).map(shape), ...groups.filter(x => x.parent === grp.id).map(x => zones.get(x.id)).filter(Boolean)];
       if (!kids.length) return;
-      const x0 = Math.floor((Math.min(...kids.map(k => k.x)) - ZONE_PAD) / GRID) * GRID, y0 = Math.floor((Math.min(...kids.map(k => k.y)) - ZONE_PAD_TOP) / GRID) * GRID;
-      const x1 = Math.ceil((Math.max(...kids.map(k => k.x + k.w)) + ZONE_PAD) / GRID) * GRID, y1 = Math.ceil((Math.max(...kids.map(k => k.y + k.h)) + ZONE_PAD) / GRID) * GRID;
+      let x0 = Math.floor((Math.min(...kids.map(k => k.x)) - ZONE_PAD) / GRID) * GRID, x1 = Math.ceil((Math.max(...kids.map(k => k.x + k.w)) + ZONE_PAD) / GRID) * GRID;
+      const y0 = Math.floor((Math.min(...kids.map(k => k.y)) - ZONE_PAD_TOP) / GRID) * GRID, y1 = Math.ceil((Math.max(...kids.map(k => k.y + k.h)) + ZONE_PAD) / GRID) * GRID;
+      // A zone is as wide as the tab with its name, as far as the shapes, zones and channels beside it leave room.
+      const need = grp.tab && grp.tab.w ? grp.tab.w + 2 * GRID : 0;
+      if (x1 - x0 < need) {
+        const others = [
+          ...nodes.filter(n => !within(n.group, grp.id)).map(shape),
+          ...[...zones].filter(([id]) => !within(id, grp.id)).map(([, z]) => z),
+          ...laid.filter(({ v, w }) => !within(byId.get(v).group, grp.id) && !within(byId.get(w).group, grp.id))
+            .flatMap(({ e, v, w }) => (gr.edge({ v, w, name: e.id }).points || []).map(p => ({ x: p.x, y: p.y, w: 0, h: 0 })))
+        ].filter(o => o.y < y1 && o.y + o.h > y0);
+        const roomL = Math.max(0, Math.floor((x0 - Math.max(-Infinity, ...others.filter(o => o.x + o.w <= x0).map(o => o.x + o.w + GRID))) / GRID) * GRID);
+        const roomR = Math.max(0, Math.floor((Math.min(Infinity, ...others.filter(o => o.x >= x1).map(o => o.x - GRID)) - x1) / GRID) * GRID);
+        const extra = Math.ceil((need - (x1 - x0)) / GRID) * GRID, half = Math.ceil(extra / 2 / GRID) * GRID;
+        const l = Math.min(roomL, Math.max(half, extra - roomR)), r = Math.min(roomR, extra - l);
+        x0 -= l;
+        x1 += r;
+      }
       zones.set(grp.id, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
     });
     return zones;
@@ -153,7 +172,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       box.set(n.id, { id: n.id, cx: c.x, cy: c.y, top: c.y - h / 2, bottom: c.y + h / 2, left: c.x - w / 2, right: c.x + w / 2 });
     });
     // Zones: inner groups first, so an outer zone holds the zones inside it.
-    const zones = zoneBoxes(gr);
+    const zones = zoneBoxes(gr, laid);
     // Bands: the rows that shapes and labels fill, and the lines of the zones. A run across the frame never
     // enters a band, so it cannot hit a shape or a label, or run on top of the border of a zone.
     const raw = [...box.values()].map(b => [b.top, b.bottom]), labels = [];
@@ -164,19 +183,30 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       raw.push([p.y - hh, p.y + hh]);
       labels.push({ id: `label:${e.id}`, left: p.x - hw, right: p.x + hw, top: p.y - hh, bottom: p.y + hh });
     });
+    // The tab with the name of a zone sits at its top left corner. A run passes beside a tab, not through it.
+    const tabs = [], tabRows = [];
     zones.forEach((z, id) => {
       const a = frame.to({ x: z.x, y: z.y }), b = frame.to({ x: z.x + z.w, y: z.y + z.h });
       [Math.min(a.y, b.y), Math.max(a.y, b.y)].forEach(y => raw.push([y - 1, y + 1]));
-      // A package has a tab on top of its body, so the top of the body is a line too.
-      if (groupById.get(id).pkg) { const t = frame.to({ x: z.x, y: z.y + 24 }), u = frame.to({ x: z.x + z.w, y: z.y + 24 }); if (Math.abs(t.y - u.y) < 1) raw.push([t.y - 1, t.y + 1]); }
+      const grp = groupById.get(id), size = grp.tab && grp.tab.w ? grp.tab : grp.pkg ? { w: 80, h: 24 } : null;
+      if (!size) return;
+      const p = frame.to({ x: z.x, y: z.y }), q = frame.to({ x: z.x + Math.min(z.w, size.w), y: z.y + size.h });
+      const tb = { id: `tab:${id}`, zone: id, left: Math.min(p.x, q.x), right: Math.max(p.x, q.x), top: Math.min(p.y, q.y), bottom: Math.max(p.y, q.y) };
+      tabs.push(tb);
+      // Across the ranks, the row of the tab is a band too, so a run does not turn inside it.
+      if (!side) tabRows.push([tb.top - 1, tb.bottom + 1]);
     });
-    raw.sort((a, b) => a[0] - b[0]);
-    const bands = [];
-    raw.forEach(([a, b]) => { const last = bands[bands.length - 1]; if (last && a <= last[1] + 1) last[1] = Math.max(last[1], b); else bands.push([a, b]); });
+    const merge = list => {
+      const out = [];
+      [...list].sort((a, b) => a[0] - b[0]).forEach(([a, b]) => { const last = out[out.length - 1]; if (last && a <= last[1] + 1) last[1] = Math.max(last[1], b); else out.push([a, b]); });
+      return out;
+    };
+    const solid = merge(raw), bands = merge([...raw, ...tabRows]);
     const gaps = bands.slice(1).map((b, i) => ({ lo: bands[i][1], hi: b[0], jogs: [] }));
     const boxes = [...box.values()], midX = (Math.min(...boxes.map(b => b.left)) + Math.max(...boxes.map(b => b.right))) / 2;
-    // A channel point matters only inside a band. In a gap, a run can go anywhere, so such points go.
-    const inBand = y => bands.some(([a, b]) => y > a + 0.5 && y < b - 0.5);
+    // A channel point matters only where shapes, labels or zone lines fill the row. Elsewhere, a run can go
+    // anywhere, so such points go. dagre does not know the tabs, so a point in the row of a tab goes too.
+    const inBand = y => solid.some(([a, b]) => y > a + 0.5 && y < b - 0.5);
     const gapBetween = (y0, y1) => {
       const lo = Math.min(y0, y1), hi = Math.max(y0, y1);
       let best = null, size = 0;
@@ -193,7 +223,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       return { id, zone: true, left, right, top, bottom, cx: (left + right) / 2, cy: (top + bottom) / 2 };
     };
     // True when a path keeps clear of every shape and label, except the shapes in `skip`.
-    const things = [...boxes, ...labels];
+    const things = [...boxes, ...labels, ...tabs];
     const clear = (path, skip) => path.slice(1).every((q, i) => {
       const p = path[i], x0 = Math.min(p.x, q.x), x1 = Math.max(p.x, q.x), y0 = Math.min(p.y, q.y), y1 = Math.max(p.y, q.y);
       return things.every(o => skip.includes(o.id) || x1 <= o.left - PASS || x0 >= o.right + PASS || y1 <= o.top - PASS || y0 >= o.bottom + PASS);
@@ -209,6 +239,12 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
         if (!A || !B) return { e, auto: true };
         const sides = A.bottom <= B.top ? ['bottom', 'top'] : B.bottom <= A.top ? ['top', 'bottom'] : A.right <= B.left ? ['right', 'left'] : ['left', 'right'];
         const at = (b, sd) => (sd === 'bottom' ? { x: b.cx, y: b.bottom } : sd === 'top' ? { x: b.cx, y: b.top } : sd === 'right' ? { x: b.right, y: b.cy } : { x: b.left, y: b.cy });
+        // Down the ranks, the connector takes the channel of its stand-in shapes between the two boxes.
+        if (sides[0] === 'bottom' && d && d.points) {
+          const inner = d.points.slice(1, -1).map(p => frame.to(p)).filter(p => inBand(p.y) && p.y > A.bottom && p.y < B.top).map(p => ({ x: round(p.x), y: p.y }));
+          const label = e.label && d.x != null ? frame.to({ x: d.x, y: d.y }) : null;
+          return { e, S: A, T: B, label, zone: true, routed: true, back: false, sides, pts: [at(A, 'bottom'), ...inner, at(B, 'top')] };
+        }
         return { e, S: A, T: B, zone: true, sides, pts: [at(A, sides[0]), at(B, sides[1])] };
       }
       if (!d) return { e, auto: true };
@@ -239,6 +275,53 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       return { e, S, T, label, back: true, sides: [k, k], pts: [{ x: port(S, k), y: S.cy }, { x: port(S, k) + step, y: S.cy }, ...inner, { x: port(T, k) + step, y: T.cy }, { x: port(T, k), y: T.cy }] };
     });
 
+    // The places where the runs of other connectors cross the row at height y: a channel point in the row, or both
+    // ends of a step over the row, since the turn of the step can happen anywhere between them.
+    const runsAt = (y, ...skip) => chains.flatMap(o => {
+      if (skip.includes(o) || !o.pts || (o.zone && !o.routed)) return [];
+      const xs = [];
+      for (let i = 0; i + 1 < o.pts.length; i++) {
+        const a = o.pts[i], b = o.pts[i + 1];
+        if (Math.abs(y - a.y) < 1) xs.push(a.x);
+        else if (Math.abs(y - b.y) < 1) xs.push(b.x);
+        else if (y > Math.min(a.y, b.y) && y < Math.max(a.y, b.y)) xs.push(a.x, b.x);
+      }
+      return xs;
+    });
+    // The label of a chain when it sits on the point at index i.
+    const labelAt = (c, i) => (c.label && Math.abs(c.label.y - c.pts[i].y) < 1 ? labels.find(l => l.id === `label:${c.e.id}`) : null);
+    const bandOf = y => bands.find(([a, b]) => y > a - 0.5 && y < b + 0.5) || [y - 1, y + 1];
+    // True when the point at index i of chain c, and its label, can move to x: the row keeps room for them. A run
+    // that turns toward a point beside it does not first point at a shape in the row of that point.
+    const fits = (c, i, x) => {
+      const q = c.pts[i], lab = labelAt(c, i), hw = lab ? (lab.right - lab.left) / 2 : 0, [y0, y1] = bandOf(q.y);
+      if (!things.every(o => o === lab || x + hw + PASS <= o.left || x - hw - PASS >= o.right || y1 <= o.top || y0 >= o.bottom)) return false;
+      const aims = [c.pts[i - 1], c.pts[i + 1]].some(r => {
+        if (!r || Math.abs(r.x - x) < 0.5) return false;
+        const [r0, r1] = bandOf(r.y);
+        return boxes.some(o => o.id !== c.S.id && o.id !== c.T.id && o.bottom > r0 && o.top < r1 && x > o.left - PASS && x < o.right + PASS);
+      });
+      return !aims && runsAt(q.y, c).every(r => Math.abs(r - x) >= hw + TRACK);
+    };
+    const moveTo = (c, i, x) => {
+      const lab = labelAt(c, i);
+      if (lab) { const hw = (lab.right - lab.left) / 2; lab.left = x - hw; lab.right = x + hw; c.label = { ...c.label, x }; }
+      c.pts[i] = { ...c.pts[i], x };
+    };
+
+    // A channel point in the row of a tab moves beside the tab.
+    chains.forEach(c => {
+      if (!c.pts || c.back) return;
+      for (let i = 1; i < c.pts.length - 1; i++) {
+        const q = c.pts[i];
+        tabs.forEach(tb => {
+          if (q.y < tb.top - 1 || q.y > tb.bottom + 1 || q.x <= tb.left - TAB_CLEAR || q.x >= tb.right + TAB_CLEAR) return;
+          const x = q.x < tb.left ? Math.floor((tb.left - TAB_CLEAR) / GRID) * GRID : Math.ceil((tb.right + TAB_CLEAR) / GRID) * GRID;
+          if (fits(c, i, x)) moveTo(c, i, x);
+        });
+      }
+    });
+
     // 2. Ports: connectors of one kind share a port, like a bus. Where connectors of different kinds meet one
     // side, each kind gets its own point along the side, so a marker such as a diamond belongs to one connector.
     const SLOT = 20, ends = new Map();
@@ -257,48 +340,74 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       // An arrow that ends at a port and a line that leaves it never share the point.
       const kindOf = x => `${x.end}:${x.c.e.kind || ''}`;
       const kinds = [...new Set(list.map(kindOf))];
-      // Connectors of one kind share the middle of the side, like a bus.
-      if (kinds.length === 1 && list.length > 1) return;
-      const margin = n.margin == null ? 20 : n.margin, lo = (across ? b.left : b.top) + margin, hi = (across ? b.right : b.bottom) - margin, mid = (lo + hi) / 2;
-      if (hi < lo) return;
       // Each kind wants its port where its run goes on: the next point of its chain. So the run leaves the port
       // straight. A run at a side of its shape has no such point, so it keeps the order of the shapes it joins.
       const next = x => { const p = x.c.pts; return x.end ? p[p.length - 2] : p[1]; };
-      // A bus leaves on the channel of one of its connectors, the one nearest the middle, so that run is straight.
-      const want = k => {
-        const xs = list.filter(x => kindOf(x) === k).map(x => (across ? next(x).x : x.c.zone ? x.other.cy : null));
-        if (xs.some(v => v == null)) return null;
-        const center = across ? b.cx : b.cy;
-        return xs.sort((u, v) => Math.abs(u - center) - Math.abs(v - center))[0];
-      };
-      const order = k => { const xs = list.filter(x => kindOf(x) === k).map(x => (across ? x.other.cx : x.other.cy)); return xs.reduce((t, v) => t + v, 0) / xs.length; };
-      const pos = new Map(kinds.map(k => [k, want(k)]));
-      // A single kind keeps the middle when its channel is not on the side, since the run turns anyway.
-      if (kinds.length === 1 && (pos.get(kinds[0]) == null || pos.get(kinds[0]) < lo || pos.get(kinds[0]) > hi)) return;
-      if ([...pos.values()].some(v => v == null)) {
-        kinds.sort((a, z) => order(a) - order(z));
-        const step = Math.min(SLOT, (hi - lo) / Math.max(1, kinds.length - 1));
-        kinds.forEach((k, i) => pos.set(k, mid + step * (i - (kinds.length - 1) / 2)));
+      const margin = n.margin == null ? 20 : n.margin;
+      let lo = (across ? b.left : b.top) + margin, hi = (across ? b.right : b.bottom) - margin;
+      if (hi < lo) return;
+      // A port keeps clear of the tab of a zone: a tab on the side itself, or a tab that its runs pass.
+      if (across) {
+        let l0 = lo, h0 = hi;
+        tabs.forEach(tb => {
+          const own = tb.zone === b.id && Math.abs(sd === 'top' ? tb.top - b.top : tb.bottom - b.bottom) < 1;
+          const passed = list.some(x => (sd === 'top' ? tb.bottom <= b.top + 1 && next(x).y < tb.top : tb.top >= b.bottom - 1 && next(x).y > tb.bottom));
+          const l = tb.left - TAB_CLEAR, r = tb.right + TAB_CLEAR;
+          if ((!own && !passed) || r <= l0 || l >= h0) return;
+          if (l <= l0) l0 = r;
+          else if (r >= h0) h0 = l;
+        });
+        if (l0 <= h0) { lo = l0; hi = h0; }
+      }
+      const mid = (lo + hi) / 2, center = across ? b.cx : b.cy, free = v => v >= lo - 0.5 && v <= hi + 0.5;
+      const pos = new Map();
+      if (kinds.length === 1 && list.length > 1) {
+        // Connectors of one kind share the middle of the side, like a bus.
+        if (free(center)) return;
+        pos.set(kinds[0], Math.max(lo, Math.min(hi, center)));
       } else {
-        // Ports keep a slot of space between them, and stay on the side.
-        kinds.sort((a, z) => pos.get(a) - pos.get(z));
-        const xs = kinds.map(k => Math.max(lo, Math.min(hi, pos.get(k))));
-        for (let i = 1; i < xs.length; i++) xs[i] = Math.max(xs[i], xs[i - 1] + SLOT);
-        for (let i = xs.length - 2; i >= 0; i--) xs[i] = Math.min(xs[i], xs[i + 1] - SLOT);
-        if (xs.length > 1 && (xs[0] < lo || xs[xs.length - 1] > hi)) {
-          const step = (hi - lo) / (xs.length - 1);
-          xs.forEach((_, i) => { xs[i] = lo + step * i; });
+        // A bus leaves on the channel of one of its connectors, the one nearest the middle, so that run is straight.
+        // A zone connector without channel points runs straight across the span that its two boxes share.
+        const span = x => {
+          const o = x.other, a = Math.max(across ? b.left : b.top, across ? o.left : o.top), z = Math.min(across ? b.right : b.bottom, across ? o.right : o.bottom);
+          return z - a > 2 * margin ? (a + z) / 2 : across ? o.cx : o.cy;
+        };
+        const want = k => {
+          const xs = list.filter(x => kindOf(x) === k).map(x => (x.c.zone && !x.c.routed ? span(x) : across ? next(x).x : null));
+          if (xs.some(v => v == null)) return null;
+          return xs.sort((u, v) => Math.abs(u - center) - Math.abs(v - center))[0];
+        };
+        const order = k => { const xs = list.filter(x => kindOf(x) === k).map(x => (across ? x.other.cx : x.other.cy)); return xs.reduce((t, v) => t + v, 0) / xs.length; };
+        kinds.forEach(k => pos.set(k, want(k)));
+        if (kinds.length === 1 && (pos.get(kinds[0]) == null || !free(pos.get(kinds[0])))) {
+          // A single kind keeps the middle when its channel is not on the side, since the run turns anyway.
+          if (free(center)) return;
+          pos.set(kinds[0], Math.max(lo, Math.min(hi, center)));
+        } else if ([...pos.values()].some(v => v == null)) {
+          kinds.sort((a, z) => order(a) - order(z));
+          const step = Math.min(SLOT, (hi - lo) / Math.max(1, kinds.length - 1));
+          kinds.forEach((k, i) => pos.set(k, mid + step * (i - (kinds.length - 1) / 2)));
+        } else {
+          // Ports keep a slot of space between them, and stay on the side.
+          kinds.sort((a, z) => pos.get(a) - pos.get(z));
+          const xs = kinds.map(k => Math.max(lo, Math.min(hi, pos.get(k))));
+          for (let i = 1; i < xs.length; i++) xs[i] = Math.max(xs[i], xs[i - 1] + SLOT);
+          for (let i = xs.length - 2; i >= 0; i--) xs[i] = Math.min(xs[i], xs[i + 1] - SLOT);
+          if (xs.length > 1 && (xs[0] < lo || xs[xs.length - 1] > hi)) {
+            const step = (hi - lo) / (xs.length - 1);
+            xs.forEach((_, i) => { xs[i] = lo + step * i; });
+          }
+          kinds.forEach((k, i) => pos.set(k, Math.round(xs[i])));
         }
-        kinds.forEach((k, i) => pos.set(k, Math.round(xs[i])));
       }
       list.forEach(x => {
         const at = Math.round(pos.get(kindOf(x))), p = x.c.pts, i = x.end ? p.length - 1 : 0;
         // A port in the middle needs no share.
-        if (Math.abs(at - (across ? b.cx : b.cy)) < 0.5) return;
+        if (Math.abs(at - center) < 0.5) return;
         x.c.slots = x.c.slots || [null, null];
         x.c.slots[x.end] = kinds.indexOf(kindOf(x));
         if (across) p[i] = { ...p[i], x: at };
-        else if (x.c.zone) p[i] = { ...p[i], y: at };
+        else if (x.c.zone && !x.c.routed) p[i] = { ...p[i], y: at };
         else {
           // A port at a side moves along the side, with the run that leaves it.
           const j = x.end ? i - 1 : 1;
@@ -307,12 +416,116 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
         }
       });
     });
+    const portKey = (c, end) => `${(end ? c.T : c.S).id}:${c.sides[end]}:${c.slots && c.slots[end] != null ? c.slots[end] : ''}`;
+    const forward = c => c.pts && !c.back && !(c.zone && !c.routed);
+
+    // Runs that share a port keep the order of the shapes at their other ends, so they do not cross. dagre can leave
+    // two of them crossed. Then their channel points and labels trade places in the rows that they share.
+    const inner = (c, y) => c.pts.findIndex((q, i) => i > 0 && i < c.pts.length - 1 && Math.abs(q.y - y) < 1);
+    const shared = new Map();
+    chains.forEach(c => {
+      if (!forward(c) || c.pts.length < 3) return;
+      [0, 1].forEach(end => { const k = `${end}:${portKey(c, end)}`; if (!shared.has(k)) shared.set(k, []); shared.get(k).push(c); });
+    });
+    shared.forEach((list, k) => {
+      const end = +k[0];
+      for (let a = 0; a < list.length; a++) for (let z = a + 1; z < list.length; z++) {
+        // The rows that the two runs share next to the port, and the points where they part after those rows.
+        const A = list[a], B = list[z], from = c => (end ? [...c.pts].reverse() : c.pts);
+        const pa = from(A), pb = from(B), rows = [];
+        let m = 1;
+        while (m < pa.length - 1 && m < pb.length - 1 && Math.abs(pa[m].y - pb[m].y) < 1) { rows.push(pa[m].y); m++; }
+        if (!rows.length || Math.abs(pa[m].x - pb[m].x) < 0.5) continue;
+        const sides = rows.map(y => Math.sign(A.pts[inner(A, y)].x - B.pts[inner(B, y)].x));
+        // They cross when they part in the other order than the one they keep in the shared rows.
+        if (!sides.every(v => v !== 0 && v === sides[0]) || sides[0] === Math.sign(pa[m].x - pb[m].x)) continue;
+        rows.forEach(y => {
+          const items = [A, B].map(c => { const i = inner(c, y), lab = labelAt(c, i); return { c, i, x: c.pts[i].x, hw: lab ? (lab.right - lab.left) / 2 : 0, lab }; });
+          items.sort((u, v) => u.x - v.x);
+          const L = items[0].x - items[0].hw, R = items[1].x + items[1].hw;
+          // Nothing else may sit between the two in the row.
+          if (things.some(o => !items.some(t => t.lab === o) && o.top < y && o.bottom > y && o.right > L && o.left < R)) return;
+          if (runsAt(y, A, B).some(r => r > L - 0.5 && r < R + 0.5)) return;
+          // The one on the right goes to the left end of their span, and the other one to the right end.
+          moveTo(items[1].c, items[1].i, L + items[1].hw);
+          moveTo(items[0].c, items[0].i, R - items[0].hw);
+        });
+      }
+    });
+
+    // A run that turns in a gap too small for a turn takes the point after the gap along, when its row has room.
+    // The label on that point moves too.
+    const room = (y0, y1) => { const gp = gapBetween(y0, y1); return gp ? Math.min(Math.max(y0, y1), gp.hi) - Math.max(Math.min(y0, y1), gp.lo) : 0; };
+    const roomy = (y0, y1) => room(y0, y1) >= 2 * GAP_MARGIN;
+    chains.forEach(c => {
+      if (!forward(c) || c.pts.length < 3) return;
+      const p = c.pts, last = p.length - 1;
+      [[0, 1, 2], [last, last - 1, last - 2]].forEach(([i, j, k]) => {
+        if (Math.abs(p[i].x - p[j].x) < 0.5 || roomy(p[i].y, p[j].y) || room(p[j].y, p[k].y) <= room(p[i].y, p[j].y)) return;
+        if (fits(c, j, p[i].x)) moveTo(c, j, p[i].x);
+      });
+    });
+    // A label moves onto the line of the point before or after it, so that its run turns once at most. A label
+    // between two points on one line moves onto that line. One move can make room for another, so this runs twice.
+    for (let pass = 0; pass < 2; pass++) {
+      chains.forEach(c => {
+        if (!forward(c)) return;
+        const p = c.pts;
+        for (let i = 1; i < p.length - 1; i++) {
+          if (!labelAt(c, i)) continue;
+          const a = p[i - 1], b = p[i + 1], on = v => Math.abs(v - p[i].x) < 0.5;
+          if (Math.abs(a.x - b.x) < 0.5 ? on(a.x) : on(a.x) || on(b.x)) continue;
+          const options = Math.abs(a.x - b.x) < 0.5 ? [a.x] : [roomy(a.y, p[i].y) ? b.x : null, roomy(p[i].y, b.y) ? a.x : null];
+          const x = options.find(v => v != null && fits(c, i, v));
+          if (x != null) moveTo(c, i, x);
+        }
+      });
+    }
+
+    // A port that is alone on its side can move to x when the side reaches x, and the run from the port to the point
+    // at height y keeps clear of tabs.
+    const movable = (bx, sd, x, y) => {
+      const n = byId.get(bx.id) || { slide: 'all', margin: 20 }, outSide = sideOf(frame.from(SIDE_VEC[sd])), margin = n.margin == null ? 20 : n.margin;
+      if ((ends.get(`${bx.id}:${sd}`) || []).length !== 1 || !(n.slide === 'all' || (n.slide === 'tb' && (outSide === 'top' || outSide === 'bottom')))) return false;
+      if (x < bx.left + margin || x > bx.right - margin) return false;
+      const y0 = Math.min(y, sd === 'top' ? bx.top : bx.bottom), y1 = Math.max(y, sd === 'top' ? bx.top : bx.bottom);
+      return !tabs.some(tb => x > tb.left - TAB_CLEAR && x < tb.right + TAB_CLEAR && tb.bottom >= y0 - 1 && tb.top <= y1 + 1);
+    };
+    const slotted = (c, end) => { c.slots = c.slots || [null, null]; if (c.slots[end] == null) c.slots[end] = 0; };
+    // A port that is alone on its side moves onto the line of the point next to it, so its run leaves straight.
+    chains.forEach(c => {
+      if (!forward(c) || c.pts.length < 3) return;
+      const p = c.pts, last = p.length - 1;
+      [[0, 1, c.S], [last, last - 1, c.T]].forEach(([i, j, bx]) => {
+        const end = i ? 1 : 0;
+        if (Math.abs(p[i].x - p[j].x) < 0.5 || !movable(bx, c.sides[end], p[j].x, p[j].y)) return;
+        p[i] = { ...p[i], x: p[j].x };
+        slotted(c, end);
+      });
+    });
+
+    // A connector down the ranks runs straight when the port at one end is alone on its side and can move onto the
+    // line of the other port, and the straight run keeps clear of shapes, labels and the channels of other connectors.
+    chains.forEach(c => {
+      if (!forward(c) || c.label) return;
+      const p = c.pts, last = p.length - 1;
+      if (p.every(q => Math.abs(q.x - p[0].x) < 0.5)) return;
+      for (const end of [1, 0]) {
+        const bx = end ? c.T : c.S, x = p[end ? 0 : last].x;
+        if (!movable(bx, c.sides[end], x, p[end ? 0 : last].y)) continue;
+        if (tabs.some(tb => x > tb.left - TAB_CLEAR && x < tb.right + TAB_CLEAR && tb.bottom >= p[0].y - 1 && tb.top <= p[last].y + 1)) continue;
+        if (!clear([{ x, y: p[0].y }, { x, y: p[last].y }], [c.S.id, c.T.id])) continue;
+        if (chains.some(o => o !== c && o.pts && o.pts.some(q => q.y > p[0].y && q.y < p[last].y && Math.abs(q.x - x) < TRACK))) continue;
+        c.pts = p.map(q => ({ ...q, x }));
+        slotted(c, end);
+        break;
+      }
+    });
 
     // 3. Jogs: a change of channel between two chain points happens in the gap between them.
     const firsts = new Map(), lasts = new Map(), count = (m, k) => m.set(k, (m.get(k) || 0) + 1);
-    const portKey = (c, end) => `${(end ? c.T : c.S).id}:${c.sides[end]}:${c.slots && c.slots[end] != null ? c.slots[end] : ''}`;
     chains.forEach(c => {
-      if (!c.pts || c.zone) return;
+      if (!c.pts || (c.zone && !c.routed)) return;
       c.jogs = new Map();
       const p = c.pts, n = p.length;
       for (let i = 0; i + 1 < n; i++) {
@@ -373,7 +586,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
         const n = byId.get(b.id), p = n ? out.pos.get(b.id) : zones.get(b.id), w = n ? n.w : p.w, h = n ? n.h : p.h, sd = sides[end];
         return Math.round((sd === 'top' || sd === 'bottom' ? (q.x - p.x) / w : (q.y - p.y) / h) * 10000) / 10000;
       };
-      if (c.zone) {
+      if (c.zone && !c.routed) {
         const r = { fromSide: sides[0], toSide: sides[1] };
         if (c.slots && c.slots[0] != null) r.fromAt = share(c.S, 0, frame.from(c.pts[0]));
         if (c.slots && c.slots[1] != null) r.toAt = share(c.T, 1, frame.from(c.pts[1]));

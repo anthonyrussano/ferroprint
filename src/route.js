@@ -20,14 +20,14 @@ export function sidePoint(b, s) {
 }
 const grow = (b, m) => ({ x0: b.x - m, y0: b.y - m, x1: b.x + b.w + m, y1: b.y + b.h + m });
 
-// True when a polyline runs through the inside of a box.
+// True when a polyline runs through a box, or along its border. Axis-aligned segments only.
+const TOUCH = 2;
 export function crosses(pts, boxes) {
   for (let i = 1; i < pts.length; i++) {
     const a = pts[i - 1], b = pts[i];
     const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
     for (const o of boxes) {
-      // Axis-aligned segments only: the segment crosses the open box when both of its ranges meet the inside.
-      if (x1 > o.x && x0 < o.x + o.w && y1 > o.y && y0 < o.y + o.h) return true;
+      if (x1 > o.x - TOUCH && x0 < o.x + o.w + TOUCH && y1 > o.y - TOUCH && y0 < o.y + o.h + TOUCH) return true;
     }
   }
   return false;

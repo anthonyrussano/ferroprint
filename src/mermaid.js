@@ -532,6 +532,12 @@ function stateShape(n, dir, L, caps) {
 }
 
 // The size of a connector label, so the layout keeps room for it.
+// The tab with the name of a zone, or the folder tab of a package. It matches the zone in draw.jsx.
+function tabSize(label, pkg, L, caps) {
+  const fs = 13 * 0.95, str = caps ? String(label || '').toUpperCase() : String(label || '');
+  const w = str ? Math.ceil(measure(str, `${L.weight} ${fs}px ${L.family}`) + str.length * L.ls * fs + 24) : 0;
+  return pkg ? { w: Math.max(80, w), h: 24 } : { w, h: 26 };
+}
 function labelSize(text, L, caps) {
   if (!text) return null;
   const str = caps ? text.toUpperCase() : text, font = `${L.weight} 13px ${L.family}`;
@@ -567,7 +573,7 @@ export async function mermaidSheet(text, { L, caps = true, id = () => Math.rando
   const MARGIN = { terminal: n => n.h / 2 + 8, service: () => 20 };
   nodes.forEach(n => { n.slide = SLIDE[n.type] || null; n.margin = MARGIN[n.type] ? MARGIN[n.type](n) : 8; });
   const byKey = new Map([...g.nodes.keys()].map((k, i) => [k, nodes[i]]));
-  const groups = g.groups.map(x => ({ id: zoneIds.get(x.id), parent: x.parent ? zoneIds.get(x.parent) : null, label: x.label, pkg: !!x.pkg }));
+  const groups = g.groups.map(x => ({ id: zoneIds.get(x.id), parent: x.parent ? zoneIds.get(x.parent) : null, label: x.label, pkg: !!x.pkg, tab: tabSize(x.label, !!x.pkg, L, caps) }));
   const ref = k => (byKey.has(k) ? byKey.get(k).id : zoneIds.get(k) || null);
   const edges = g.edges.map(e => {
     const out = { id: id(), from: ref(e.from), to: ref(e.to), label: e.label || '', route: 'elbow', arrow: e.arrow || 'end', dashed: !!e.dashed };

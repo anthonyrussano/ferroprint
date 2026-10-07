@@ -195,6 +195,23 @@ flowchart LR
     expect(inter(web, zone)).toBe(false);
   });
 
+  it('keeps connectors clear of the tab with the name of a zone', async () => {
+    const sh = await mermaidSheet(`flowchart TB
+  a[Start] --> b[A rather long label for a shape]
+  subgraph z [A subgraph with a long name]
+    b
+  end`, { L });
+    const map = Object.fromEntries(sh.nodes.map(n => [n.id, n])), zone = sh.nodes.find(n => n.type === 'zone');
+    // The test setup measures 7 px for each letter, so the tab is at least this wide.
+    const tab = { x: zone.x, y: zone.y, w: 27 * 7 + 24, h: 26 };
+    expect(zone.w).toBeGreaterThan(tab.w);
+    const geo = edgeGeom(sh.edges[0], map), p = geo.poly;
+    p.slice(1).forEach((q, k) => {
+      const s = p[k], hit = Math.max(s.x, q.x) > tab.x && Math.min(s.x, q.x) < tab.x + tab.w && Math.max(s.y, q.y) > tab.y && Math.min(s.y, q.y) < tab.y + tab.h;
+      expect(hit).toBe(false);
+    });
+  });
+
   it('makes class boxes and puts a parent above its child', async () => {
     const sh = await mermaidSheet('classDiagram\n  Animal <|-- Duck\n  class Duck {\n    +swim()\n  }', { L });
     const by = Object.fromEntries(sh.nodes.map(n => [n.label, n]));
