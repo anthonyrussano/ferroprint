@@ -118,8 +118,9 @@ export function TopBar({ barRef, save, canUndo, canRedo, snap, dims, mode, panel
         <Btn on={mode === 'white'} title="Whiteprint: blue lines on white paper" onClick={on.white}>White</Btn>
       </div>
       <div className="group">
+        <Btn on={panel === 'projects'} title="All projects in this browser" onClick={on.projects}>Projects</Btn>
         <Btn on={panel === 'new'} title="A blank project, a blank sheet or a template" onClick={on.newDoc}>New</Btn>
-        <Btn title={`Open a Ferroprint JSON file (${MOD}O)`} onClick={on.open}>Open</Btn>
+        <Btn title={`Open a Ferroprint JSON file as a new project (${MOD}O)`} onClick={on.open}>Open</Btn>
         <Btn on={panel === 'share'} title="Share this project with a link" onClick={on.share}>Share</Btn>
         <div className="group-label split">EXPORT</div>
         <Btn className="plain" title="Download this sheet as PNG" onClick={on.png}>PNG</Btn>
@@ -544,7 +545,7 @@ export const NewPanel = memo(function NewPanel({ theme, letter, caps, grid, on }
           <button type="button" className="act" onClick={on.blankSheet}>BLANK SHEET</button>
           <button type="button" className="act" onClick={on.blankDoc}>BLANK PROJECT</button>
         </div>
-        <p className="hint tight">A blank sheet joins this project. A blank project replaces this project, and the message after it has an UNDO button.</p>
+        <p className="hint tight">A blank sheet joins this project. A blank project starts a new project, and this project stays in PROJECTS.</p>
         <div className="caption">TEMPLATES · EACH ONE ADDS A SHEET</div>
         <div className="templates">
           {TEMPLATES.map(tp => (
@@ -559,6 +560,60 @@ export const NewPanel = memo(function NewPanel({ theme, letter, caps, grid, on }
     </aside>
   );
 });
+
+const fmtWhen = ms => {
+  if (!ms) return 'NOT SAVED YET';
+  const d = new Date(ms), now = new Date();
+  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === now.toDateString() ? `TODAY ${time}` : `${d.toISOString().slice(0, 10)} ${time}`;
+};
+const fmtBytes = b => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`);
+const STORE_HINT = {
+  idb: 'The projects stay in this browser on this device. To move a project to a different device, use Export JSON or Share.',
+  local: 'This browser keeps the projects in localStorage, which holds about 5 MB. To keep a copy, use Export JSON.',
+  none: 'This browser blocks storage, so it cannot keep projects. Use Export JSON to keep your work.'
+};
+
+// The projects in this browser. The open project is always in the list, also before its first save.
+export function ProjectsPanel({ data, current, name, kind, on }) {
+  const [arm, setArm] = useState(null);
+  useEffect(() => {
+    if (!arm) return undefined;
+    const t = setTimeout(() => setArm(null), 2500);
+    return () => clearTimeout(t);
+  }, [arm]);
+  const list = data ? data.list : null, use = data && data.use;
+  const rows = list ? (list.some(p => p.id === current) ? list : [{ id: current, name, sheets: null, updated: null }, ...list]) : [];
+  const del = id => { if (arm === id) { setArm(null); on.remove(id); } else setArm(id); };
+  return (
+    <aside className="panel float projects-panel" aria-label="Projects">
+      <header><h2>PROJECTS</h2><button type="button" className="close" onClick={on.close}>CLOSE</button></header>
+      <section>
+        <div className="grid2">
+          <button type="button" className="act" onClick={on.blank}>NEW PROJECT</button>
+          <button type="button" className="act" onClick={on.file}>OPEN JSON FILE</button>
+        </div>
+      </section>
+      <div className="proj-list" role="list">
+        {!list && <p className="hint">Loading the projects…</p>}
+        {rows.map(p => {
+          const open = p.id === current, title = (open ? name : p.name) || 'Untitled project';
+          return (
+            <div className={cx('proj', open && 'on')} role="listitem" key={p.id}>
+              <button type="button" className="proj-open" title={open ? 'This project is open' : `Open ${title}`} onClick={() => on.open(p.id)}>
+                <span className="proj-name">{title}</span>
+                <span className="proj-meta">{p.sheets != null ? `${p.sheets} ${p.sheets === 1 ? 'SHEET' : 'SHEETS'} · ` : ''}{fmtWhen(p.updated)}</span>
+              </button>
+              {open ? <span className="proj-tag">OPEN</span> : <button type="button" className="proj-act" title="Make a copy of this project" onClick={() => on.duplicate(p.id)}>COPY</button>}
+              {!open && <button type="button" className="proj-act danger" title="Delete this project" onClick={() => del(p.id)}>{arm === p.id ? 'CONFIRM' : 'DELETE'}</button>}
+            </div>
+          );
+        })}
+      </div>
+      <p className="hint">{STORE_HINT[kind]}{use && use.used ? ` The projects use ${fmtBytes(use.used)}.` : ''}</p>
+    </aside>
+  );
+}
 
 export function SharePanel({ share, on }) {
   const ref = useRef(null);
@@ -598,9 +653,9 @@ export function IncomingPanel({ doc, on }) {
     <aside className="panel float incoming" aria-label="Shared project">
       <header><h2>SHARED PROJECT</h2></header>
       <section>
-        <p className="lead">The link holds {name}, with {n} {n === 1 ? 'sheet' : 'sheets'}. Your own project stays unless you replace it.</p>
-        <button type="button" className="act" onClick={on.add}>ADD ITS SHEETS TO MY PROJECT</button>
-        <button type="button" className="act" onClick={on.replace}>REPLACE MY PROJECT</button>
+        <p className="lead">The link holds {name}, with {n} {n === 1 ? 'sheet' : 'sheets'}. Your projects do not change.</p>
+        <button type="button" className="act" onClick={on.open}>OPEN AS A NEW PROJECT</button>
+        <button type="button" className="act" onClick={on.add}>ADD ITS SHEETS TO THIS PROJECT</button>
         <button type="button" className="act" onClick={on.cancel}>CANCEL</button>
       </section>
     </aside>

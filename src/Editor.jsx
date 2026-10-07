@@ -2,8 +2,8 @@
 import { Component, createRef } from 'react';
 import * as F from './engine.js';
 import { onCloudLoad } from './cloud.js';
-import { Frame, TopBar, Palette, Inspector, HelpPanel, SetupPanel, LibraryPanel, NewPanel, SharePanel, IncomingPanel, TitleBlock, StatusBar, Toast } from './chrome.jsx';
-import { loadDoc, loadUI, storageAvailable } from './storage.js';
+import { Frame, TopBar, Palette, Inspector, HelpPanel, SetupPanel, LibraryPanel, NewPanel, ProjectsPanel, SharePanel, IncomingPanel, TitleBlock, StatusBar, Toast } from './chrome.jsx';
+import { loadUI, setTabProject } from './storage.js';
 import { History } from './editor/history.js';
 import { Pointer } from './editor/pointer.js';
 import { Commands } from './editor/commands.js';
@@ -20,22 +20,28 @@ function textureFor(mode) {
 const TEXTURES = { blue: textureFor('blue'), white: textureFor('white') };
 
 export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(History(Component)))))) {
+  // `boot` holds the store and the project to open. See boot() in storage.js.
   constructor(props) {
     super(props);
-    const stored = loadDoc(), ui = loadUI();
+    const { boot } = props, ui = loadUI();
+    this.store = boot.store;
+    this.projectId = boot.id || F.uid();
+    this.tabId = F.uid();
+    setTabProject(this.projectId);
     this.state = {
-      doc: stored ? stored.doc : F.exampleDoc(),
+      doc: boot.doc || (boot.fresh ? F.exampleDoc() : F.blankDoc()),
       tool: 'select', sel: [], hover: null, editing: null, marquee: null, guides: [], temp: null, draft: null,
       snap: ui.snap !== false, dims: ui.dims !== false, mode: ui.mode === 'white' ? 'white' : 'blue', clean: ui.clean === true,
       recent: Array.isArray(ui.recent) ? ui.recent.filter(isLibraryTool).slice(0, RECENT_MAX) : ['stairs', 'sofa', 'cloud'],
       pins: Array.isArray(ui.pins) ? ui.pins.filter(isLibraryTool).slice(0, PIN_MAX) : [], ghost: null,
       size: { w: 0, h: 0 }, cursor: { x: 0, y: 0 }, space: false, panning: false,
-      panel: null, toast: null, delArm: false, palTop: 92, share: null, incoming: null,
+      panel: null, toast: null, delArm: false, palTop: 92, share: null, incoming: null, projects: null,
       win: { w: window.innerWidth, h: window.innerHeight },
-      save: storageAvailable() ? 'saved' : 'off'
+      save: boot.store.kind === 'none' ? 'off' : 'saved'
     };
-    this._savedJSON = stored ? stored.json : null;
-    this._hadStored = !!stored;
+    this._savedJSON = boot.json;
+    // A first visit opens the example project. A share link then takes its place.
+    this._fresh = boot.fresh;
     this.undoStack = []; this.redoStack = [];
     this.drag = null; this.clip = null; this.pasteN = 0;
     this.pointers = new Map();
@@ -43,12 +49,16 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     this.nodeCache = new WeakMap(); this.edgeCache = new WeakMap(); this.classFit = new WeakMap(); this.cloudGen = 0;
     this.barRef = createRef(); this.fileRef = createRef();
     this.canvasEl = null; this.contentEl = null;
-    ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onStorage', 'onHide', 'onHash'].forEach(k => { this[k] = this[k].bind(this); });
+    ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash'].forEach(k => { this[k] = this[k].bind(this); });
     // Stable handlers let the library panel skip renders while the pointer moves.
     this.lib = { pick: id => this.pickSymbol(id), pin: id => this.togglePin(id), drag: (id, e) => this.startPlace(id, e), close: () => this.setState({ panel: null }) };
     this.tpl = { add: id => this.addTemplate(id), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
     this.shareUI = { copied: ok => this.flash(ok ? 'Link copied. Anyone with the link can open this project.' : 'Copy the selected link with Ctrl C.', 4000), close: () => this.setState({ panel: null, share: null }) };
-    this.inUI = { add: () => this.acceptShared('add'), replace: () => this.acceptShared('replace'), cancel: () => this.acceptShared('cancel') };
+    this.inUI = { add: () => this.acceptShared('add'), open: () => this.acceptShared('new'), cancel: () => this.acceptShared('cancel') };
+    this.projUI = {
+      open: id => this.openProject(id), duplicate: id => this.duplicateProject(id), remove: id => this.deleteProject(id),
+      blank: () => this.newDoc(), file: () => this.openFile(), close: this.lib.close
+    };
   }
 
   componentDidMount() {
@@ -59,10 +69,10 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     window.addEventListener('keyup', this.onKeyUp);
     window.addEventListener('resize', this.onResize);
     window.addEventListener('blur', this.onBlurWin);
-    window.addEventListener('storage', this.onStorage);
     window.addEventListener('pagehide', this.onHide);
     document.addEventListener('visibilitychange', this.onHide);
     window.addEventListener('hashchange', this.onHash);
+    this.openChannel();
     this.checkShared();
     // A cloud set arrives after the first render, so the sheet draws again when one loads.
     this.offCloud = onCloudLoad(() => { this.cloudGen++; this.forceUpdate(); });
@@ -81,11 +91,11 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     window.removeEventListener('keyup', this.onKeyUp);
     window.removeEventListener('resize', this.onResize);
     window.removeEventListener('blur', this.onBlurWin);
-    window.removeEventListener('storage', this.onStorage);
     window.removeEventListener('pagehide', this.onHide);
     document.removeEventListener('visibilitychange', this.onHide);
     window.removeEventListener('hashchange', this.onHash);
     if (this.offCloud) this.offCloud();
+    this.closeChannel();
     if (this._saveT) this.flushSave();
     [this._toastT, this._armT].forEach(clearTimeout);
   }
@@ -160,7 +170,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
             undo: () => this.doUndo(), redo: () => this.doRedo(),
             snap: () => this.setState({ snap: !st.snap }), dims: () => this.setState({ dims: !st.dims }),
             blue: () => this.setState({ mode: 'blue' }), white: () => this.setState({ mode: 'white' }),
-            newDoc: () => this.togglePanel('new'), open: () => this.openFile(), share: () => (st.panel === 'share' ? this.shareUI.close() : this.openShare()),
+            projects: () => this.showProjects(), newDoc: () => this.togglePanel('new'), open: () => this.openFile(), share: () => (st.panel === 'share' ? this.shareUI.close() : this.openShare()),
             png: () => this.exportImg('png'), svg: () => this.exportImg('svg'), json: () => this.exportJSON(),
             setup: () => this.togglePanel('setup'), help: () => this.togglePanel('help'), clean: () => this.toggleClean()
           }}
@@ -205,6 +215,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
           />
         )}
         {st.panel === 'new' && <NewPanel theme={t} letter={ctx.L} caps={ctx.caps} grid={g} on={this.tpl} />}
+        {st.panel === 'projects' && <ProjectsPanel data={st.projects} current={this.projectId} name={d.meta.project} kind={this.store.kind} on={this.projUI} />}
         {st.panel === 'share' && <SharePanel share={st.share} on={this.shareUI} />}
         {st.panel === 'incoming' && st.incoming && <IncomingPanel doc={st.incoming} on={this.inUI} />}
         {st.panel === 'setup' && <SetupPanel settings={d.settings} onSet={patch => this.setSettings(patch)} onClose={() => this.setState({ panel: null })} />}

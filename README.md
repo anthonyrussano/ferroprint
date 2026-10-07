@@ -7,7 +7,7 @@
 
 # Ferroprint
 
-Ferroprint is a blueprint-style sketchpad for system diagrams, flows, interface wireframes and floor plans. It runs in the browser and saves your work in the browser's `localStorage`. No account and no server are necessary.
+Ferroprint is a blueprint-style sketchpad for system diagrams, flows, interface wireframes and floor plans. It runs in the browser and keeps your projects in the browser's IndexedDB. No account and no server are necessary.
 
 Open the app: https://bjarneo.github.io/ferroprint/
 
@@ -41,13 +41,18 @@ Press `?` in the app to see all keyboard shortcuts.
 
 ## How saving works
 
-- Every change saves to `localStorage` in this browser after a short delay. The top bar shows `SAVED`, `SAVING` or `NOT SAVED`.
+- Every change saves to IndexedDB in this browser after a short delay. The top bar shows `SAVED`, `SAVING` or `NOT SAVED`.
 - Press `Ctrl S` (`⌘S` on macOS) to save at once.
-- If the app is open in two tabs, each tab takes the changes that the other tab saves.
-- `localStorage` belongs to one browser on one device. To move a project or keep a backup, use **Export JSON**, then **Open** the file on the other device.
-- If the browser blocks storage or the storage is full, the top bar shows `NOT SAVED`. Export JSON to keep your work.
-- A blank project from **New**, and **Open**, replace the current project. The message that follows has an **UNDO** button that brings the previous project back. A template or a blank sheet joins the current project.
-- When you open a share link and you already have a project, Ferroprint asks if it adds the shared sheets to your project or replaces your project. On a first visit, the shared project opens at once.
+- **Projects** lists every project in this browser. Click a project to open it. **COPY** makes a copy, and **DELETE** asks for a second click. The message after a delete has an **UNDO** button.
+- **New**, **Open** and a share link make a new project. The open project stays in the list, so nothing is replaced.
+- A template or a blank sheet joins the open project.
+- Each tab remembers its open project, so a reload opens the same project. A new tab opens the last project that you opened.
+- If 2 tabs show the same project, each tab takes the changes that the other tab saves.
+- If a tab closes before a save ends, the tab keeps the changes in `localStorage`. The next start puts them into the project.
+- The projects belong to one browser on one device. The browser can delete them when the disk is full, or when you clear the site data. To move a project or keep a backup, use **Export JSON**, then **Open** the file on the other device.
+- If the browser has no IndexedDB, the projects go to `localStorage`, which holds about 5 MB. If the browser blocks all storage, the top bar shows `NOT SAVED`. Export JSON to keep your work.
+- Ferroprint 1 kept one project in `localStorage`. The first start of this version moves that project into the list.
+- When you open a share link, Ferroprint asks if it opens the shared project as a new project or adds its sheets to the open project. On a first visit, the shared project opens at once.
 
 ## Cloud icons
 
@@ -120,4 +125,4 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/editor/exporter.js` | PNG and SVG export |
 | `src/editor/canvas.jsx` | The sheet, the selection overlay and the label editor |
 | `src/chrome.jsx` | Toolbars, inspector, panels, title block and status bar |
-| `src/storage.js` | Safe access to `localStorage` |
+| `src/storage.js` | The project store in IndexedDB, with `localStorage` when IndexedDB is missing |

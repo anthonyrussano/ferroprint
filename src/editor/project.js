@@ -1,10 +1,13 @@
-// Saving, sheets, templates, share links, and JSON files.
+// Saving, projects, sheets, templates, share links, and JSON files.
 import * as F from '../engine.js';
 import { loadCloud, cloudSet, cloudFailed } from '../cloud.js';
-import { DOC_KEY, parseDoc, saveDoc, saveUI } from '../storage.js';
+import { parseDoc, projectMeta, saveUI, setTabProject, writeJournal, clearJournal, storageUse, keepStorage } from '../storage.js';
 import { shareLink, sharedPayload, readShared, clearShared } from '../share.js';
 import { TEMPLATES } from '../templates.js';
 import { SAVE_DELAY, toolCloud } from './util.js';
+
+// Tabs tell each other when they save or delete a project.
+const CHANNEL = 'ferroprint';
 
 export const Project = Base => class extends Base {
   // ---------- persistence
@@ -12,7 +15,7 @@ export const Project = Base => class extends Base {
     const st = this.state;
     if (this._mode !== st.mode) { this._mode = st.mode; this.applyTheme(); }
     if (this._doc !== st.doc) { this._doc = st.doc; this.scheduleSave(); }
-    const prefs = { snap: st.snap, dims: st.dims, mode: st.mode, clean: st.clean, recent: st.recent, pins: st.pins }, ui = JSON.stringify(prefs);
+    const prefs = { snap: st.snap, dims: st.dims, mode: st.mode, clean: st.clean, recent: st.recent, pins: st.pins, project: this.projectId }, ui = JSON.stringify(prefs);
     if (ui !== this._ui) { this._ui = ui; saveUI(prefs); }
     this.ensureClouds();
     this.fitClasses();
@@ -52,29 +55,68 @@ export const Project = Base => class extends Base {
     this._saveT = setTimeout(() => this.flushSave(), SAVE_DELAY);
     if (this.state.save === 'saved') this.setState({ save: 'pending' });
   }
-  flushSave() {
+  // Writes the project to the store. Writes run in order, so the last one holds the newest content.
+  async flushSave() {
     clearTimeout(this._saveT); this._saveT = null;
     if (this.state.save === 'off') return false;
-    const json = JSON.stringify(this.state.doc);
-    const ok = json === this._savedJSON || saveDoc(json);
-    if (ok) { this._savedJSON = json; this._warned = false; }
-    const save = ok ? 'saved' : 'error';
+    const doc = this.state.doc, json = JSON.stringify(doc), id = this.projectId;
+    if (json === this._savedJSON) {
+      if (this.state.save !== 'saved' && !this._writing) this.setState({ save: 'saved' });
+      return true;
+    }
+    const meta = projectMeta(id, doc);
+    this._writing = (this._writing || 0) + 1;
+    const ok = await this.store.put(meta, json);
+    this._writing--;
+    if (id !== this.projectId) return ok;
+    if (ok) {
+      this._savedJSON = json; this._warned = false;
+      if (this._journaled) { this._journaled = false; clearJournal(id); }
+      this.post({ type: 'saved', id });
+    }
+    const save = !ok ? 'error' : this._saveT || this._writing ? 'pending' : 'saved';
     if (this.state.save !== save) this.setState({ save });
-    if (!ok && !this._warned) { this._warned = true; this.flash('Could not save. Browser storage is full. Export JSON to keep your work.', 7000); }
+    if (!ok && !this._warned) { this._warned = true; this.flash('Could not save. Browser storage is full or blocked. Export JSON to keep your work.', 7000); }
     return ok;
   }
-  saveNow() {
-    if (this.state.save === 'off') { this.flash('This browser blocks local storage. Use Export JSON to keep your work.', 5000); return; }
-    if (this.flushSave()) this.flash('Saved in this browser');
+  async saveNow() {
+    if (this.state.save === 'off') { this.flash('This browser blocks storage. Use Export JSON to keep your work.', 5000); return; }
+    if (await this.flushSave()) this.flash('Saved in this browser');
   }
+  // The page can close before an IndexedDB write ends, so unsaved changes also go to a journal at once.
   onHide(e) {
     if (e.type === 'visibilitychange' && document.visibilityState !== 'hidden') return;
-    if (this._saveT) this.flushSave();
+    if (this.state.save === 'off') return;
+    const json = JSON.stringify(this.state.doc);
+    if (json === this._savedJSON) return;
+    this._journaled = writeJournal(projectMeta(this.projectId, this.state.doc), json) || this._journaled;
+    this.flushSave();
   }
-  // Another tab saved the project. Take its content, but keep this tab's sheet and view.
-  onStorage(e) {
-    if (e.key !== DOC_KEY || e.newValue == null || e.newValue === this._savedJSON) return;
-    const parsed = parseDoc(e.newValue);
+
+  // ---------- other tabs
+  openChannel() {
+    if (typeof BroadcastChannel !== 'function') return;
+    this.channel = new BroadcastChannel(CHANNEL);
+    this.channel.onmessage = e => this.onChannel(e.data);
+  }
+  closeChannel() { if (this.channel) this.channel.close(); }
+  post(msg) { if (this.channel) try { this.channel.postMessage({ ...msg, tab: this.tabId }); } catch { /* the channel is closed */ } }
+  onChannel(m) {
+    if (!m || m.tab === this.tabId) return;
+    if (this.state.panel === 'projects') this.refreshProjects();
+    if (m.id !== this.projectId) return;
+    if (m.type === 'saved') this.pullProject();
+    else if (m.type === 'deleted') {
+      // Keep the work in this tab. The next save writes the project again.
+      this._savedJSON = null;
+      this.flash('Another tab deleted this project. Your next change saves it again.', 6000);
+    }
+  }
+  // Another tab saved this project. Take its content, but keep this tab's sheet and view.
+  async pullProject() {
+    const id = this.projectId, json = await this.store.get(id);
+    if (id !== this.projectId || !json || json === this._savedJSON) return;
+    const parsed = parseDoc(json);
     if (!parsed) return;
     const cur = this.state.doc, inc = parsed.doc, local = new Map(cur.sheets.map(s => [s.id, s]));
     const doc = {
@@ -83,11 +125,11 @@ export const Project = Base => class extends Base {
       sheets: inc.sheets.map(s => (local.has(s.id) ? { ...s, view: local.get(s.id).view } : s))
     };
     clearTimeout(this._saveT); this._saveT = null;
-    this._savedJSON = e.newValue; this._doc = doc;
+    this._savedJSON = parsed.json; this._doc = doc;
     this.undoStack = []; this.redoStack = []; this.drag = null;
     const act = doc.sheets.find(s => s.id === doc.active), ids = new Set([...act.nodes.map(n => n.id), ...act.edges.map(x => x.id)]);
     const ed = this.state.editing;
-    this.setState({ doc, sel: this.state.sel.filter(id => ids.has(id)), editing: ed && ids.has(ed.id) ? ed : null, hover: null, temp: null, draft: null, marquee: null, guides: [], panning: false, save: 'saved' });
+    this.setState({ doc, sel: this.state.sel.filter(x => ids.has(x)), editing: ed && ids.has(ed.id) ? ed : null, hover: null, temp: null, draft: null, marquee: null, guides: [], panning: false, save: 'saved' });
   }
   applyTheme() {
     const t = F.THEMES[this.state.mode];
@@ -95,6 +137,56 @@ export const Project = Base => class extends Base {
     document.documentElement.style.colorScheme = this.state.mode === 'blue' ? 'dark' : 'light';
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', t.paper);
+  }
+
+  // ---------- projects
+  async showProjects() {
+    if (this.state.panel === 'projects') { this.setState({ panel: null }); return; }
+    this.setState({ panel: 'projects' });
+    await this.flushSave();
+    this.refreshProjects();
+    keepStorage();
+  }
+  async refreshProjects() {
+    const [list, use] = await Promise.all([this.store.list(), storageUse()]);
+    this.setState(st => (st.panel === 'projects' ? { projects: { list, use } } : null));
+  }
+  // Shows a project in this tab. The tab remembers it, so a reload opens the same project.
+  showProject(id, doc, json, msg) {
+    this.projectId = id; this._savedJSON = json;
+    setTabProject(id);
+    this.setState({ doc, panel: null, ...this.resetTransient() });
+    if (msg) this.flash(msg, 4000);
+  }
+  async openProject(id) {
+    if (id === this.projectId) { this.setState({ panel: null }); return; }
+    await this.flushSave();
+    const json = await this.store.get(id), parsed = json && parseDoc(json);
+    if (!parsed) { this.flash('Could not read that project.', 4000); this.refreshProjects(); return; }
+    this.showProject(id, parsed.doc, parsed.json, `Opened ${parsed.doc.meta.project || 'the project'}`);
+  }
+  // A new project goes to the list. The open project stays in the list, so nothing is lost.
+  async newProject(doc, msg) {
+    await this.flushSave();
+    this.showProject(F.uid(), doc, null, msg);
+  }
+  async duplicateProject(id) {
+    const json = await this.store.get(id), parsed = json && parseDoc(json);
+    if (!parsed) { this.flash('Could not read that project.', 4000); return; }
+    const doc = { ...parsed.doc, meta: { ...parsed.doc.meta, project: `${parsed.doc.meta.project || 'Untitled project'} copy` } };
+    if (await this.store.put(projectMeta(F.uid(), doc), JSON.stringify(doc))) { this.post({ type: 'list' }); this.refreshProjects(); }
+    else this.flash('Could not copy the project. Browser storage is full.', 5000);
+  }
+  async deleteProject(id) {
+    if (id === this.projectId) return;
+    const [list, json] = await Promise.all([this.store.list(), this.store.get(id)]), meta = list.find(p => p.id === id);
+    if (!(await this.store.remove(id))) { this.flash('Could not delete the project.', 4000); return; }
+    this.post({ type: 'deleted', id });
+    this.refreshProjects();
+    this.flash(`Deleted ${(meta && meta.name) || 'the project'}`, 7000, meta && json ? {
+      label: 'UNDO',
+      run: async () => { this.setState({ toast: null }); await this.store.put(meta, json); this.post({ type: 'list' }); this.refreshProjects(); }
+    } : null);
   }
 
   // ---------- sheets and whole-project changes
@@ -121,7 +213,7 @@ export const Project = Base => class extends Base {
     const i = d.sheets.indexOf(s), rest = d.sheets.filter(q => q !== s);
     this.replaceDoc({ ...d, sheets: rest, active: rest[Math.max(0, i - 1)].id }, `Deleted ${s.number}`);
   }
-  // Swaps in a new project and offers an undo, because these changes are outside the shape history.
+  // Swaps in a new version of the project and offers an undo, because these changes are outside the shape history.
   replaceDoc(doc, msg) {
     const prev = this.state.doc;
     this.setState({ doc, ...this.resetTransient() });
@@ -131,7 +223,7 @@ export const Project = Base => class extends Base {
     const d = this.state.doc, doc = F.blankDoc();
     doc.settings = { ...d.settings };
     doc.meta.drawnBy = d.meta.drawnBy;
-    this.replaceDoc(doc, 'Started a new project');
+    this.newProject(doc, 'Started a new project. The previous project is in PROJECTS.');
   }
 
   // ---------- templates and share links
@@ -155,7 +247,7 @@ export const Project = Base => class extends Base {
     }
   }
   onHash() { this.checkShared(); }
-  // Opens a project from a share link. A reader with a project of their own chooses what happens to it.
+  // Opens a project from a share link. A reader with projects of their own chooses what happens to it.
   async checkShared() {
     const payload = sharedPayload();
     if (!payload) return;
@@ -164,14 +256,15 @@ export const Project = Base => class extends Base {
     const doc = raw && F.cleanDoc(raw);
     if (!doc) { this.flash('This share link is damaged or incomplete. Ask for a new link.', 5000); return; }
     doc.sheets = doc.sheets.map(sh => ({ ...sh, view: null }));
-    if (!this._hadStored && !this._savedJSON) { this.replaceDoc(doc, 'Opened a shared project'); return; }
+    // On a first visit, the shared project takes the place of the example project.
+    if (this._fresh && !this.undoStack.length) { this._fresh = false; this.showProject(this.projectId, doc, null, 'Opened a shared project'); return; }
     this.setState({ incoming: doc, panel: 'incoming' });
   }
   acceptShared(mode) {
     const inc = this.state.incoming;
     this.setState({ incoming: null, panel: null });
     if (!inc || mode === 'cancel') return;
-    if (mode === 'replace') { this.replaceDoc(inc, 'Opened the shared project'); return; }
+    if (mode === 'new') { this.newProject(inc, 'Opened the shared project as a new project'); return; }
     const d = this.state.doc, ids = new Set(d.sheets.map(sh => sh.id));
     const added = inc.sheets.map((sh, i) => F.cleanSheet(sh, ids, 'A-' + (101 + d.sheets.length + i)));
     this.replaceDoc({ ...d, sheets: [...d.sheets, ...added], active: added[0].id }, `Added ${added.length} shared ${added.length === 1 ? 'sheet' : 'sheets'}`);
@@ -180,7 +273,9 @@ export const Project = Base => class extends Base {
   onFile(e) {
     const f = e.target.files && e.target.files[0];
     e.target.value = '';
-    if (!f) return;
+    if (f) this.readFile(f);
+  }
+  readFile(f) {
     const r = new FileReader();
     r.onload = () => {
       let data = null;
@@ -188,7 +283,7 @@ export const Project = Base => class extends Base {
       const doc = F.cleanDoc(data);
       if (doc) {
         doc.sheets = doc.sheets.map(s => ({ ...s, view: null }));
-        this.replaceDoc(doc, 'Opened ' + f.name);
+        this.newProject(doc, `Opened ${f.name} as a new project`);
         return;
       }
       if (data && Array.isArray(data.nodes)) {
