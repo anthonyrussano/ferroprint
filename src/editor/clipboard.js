@@ -16,6 +16,11 @@ const typing = e => {
   const el = e.target, tag = ((el && el.tagName) || '').toLowerCase();
   return tag === 'input' || tag === 'textarea' || tag === 'select' || !!(el && el.isContentEditable);
 };
+// Text that the user selected on the page, for example in the help panel, copies as text.
+const textSelected = () => {
+  const sel = typeof window !== 'undefined' && window.getSelection ? window.getSelection() : null;
+  return !!(sel && !sel.isCollapsed && String(sel).trim());
+};
 const dataURL = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r.readAsDataURL(blob); });
 
 // Reads an image file. A large image is scaled down and stored as WebP, or as PNG when the browser cannot write WebP.
@@ -97,14 +102,14 @@ export const Clipboard = Base => class extends Base {
   // ---------- clipboard events
   // Copy and paste use the events of the page, so shapes, images and text can come from other tabs and apps.
   onCopy(e) {
-    if (typing(e) || !this.copy()) return;
+    if (typing(e) || textSelected() || !this.copy()) return;
     this._clipEvent = true;
     e.preventDefault();
     this._clipText = JSON.stringify({ type: CLIP_TYPE, ...this.clip });
     e.clipboardData.setData('text/plain', this._clipText);
   }
   onCut(e) {
-    if (typing(e)) return;
+    if (typing(e) || textSelected()) return;
     this.onCopy(e);
     if (e.defaultPrevented) this.del();
   }
@@ -123,6 +128,7 @@ export const Clipboard = Base => class extends Base {
   // Ctrl C, X and V. If the browser sends no clipboard event, the shapes use the in-memory clipboard.
   clipKey(k) {
     this._clipEvent = false;
+    if (textSelected()) return;
     if (k === 'c') this.copy();
     setTimeout(() => {
       if (this._clipEvent) return;
