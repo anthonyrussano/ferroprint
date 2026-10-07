@@ -126,7 +126,7 @@ export const Project = Base => class extends Base {
     };
     clearTimeout(this._saveT); this._saveT = null;
     this._savedJSON = parsed.json; this._doc = doc;
-    this.undoStack = []; this.redoStack = []; this.drag = null;
+    this.clearHistory(); this.drag = null;
     const act = doc.sheets.find(s => s.id === doc.active), ids = new Set([...act.nodes.map(n => n.id), ...act.edges.map(x => x.id)]);
     const ed = this.state.editing;
     this.setState({ doc, sel: this.state.sel.filter(x => ids.has(x)), editing: ed && ids.has(ed.id) ? ed : null, hover: null, temp: null, draft: null, marquee: null, guides: [], panning: false, save: 'saved' });
@@ -155,6 +155,7 @@ export const Project = Base => class extends Base {
   showProject(id, doc, json, msg) {
     this.projectId = id; this._savedJSON = json;
     setTabProject(id);
+    this.clearHistory();
     this.setState({ doc, panel: null, ...this.resetTransient() });
     if (msg) this.flash(msg, 4000);
   }
@@ -190,7 +191,7 @@ export const Project = Base => class extends Base {
   }
 
   // ---------- sheets and whole-project changes
-  resetTransient() { this.undoStack = []; this.redoStack = []; this.drag = null; return { sel: [], editing: null, hover: null, temp: null, draft: null, marquee: null, guides: [], delArm: false }; }
+  resetTransient() { this.drag = null; return { sel: [], editing: null, hover: null, temp: null, draft: null, marquee: null, guides: [], delArm: false }; }
   switchSheet(id) {
     if (id === this.state.doc.active) return;
     this.setState(st => ({ doc: { ...st.doc, active: id }, ...this.resetTransient() }));
@@ -199,6 +200,7 @@ export const Project = Base => class extends Base {
     const d = this.state.doc;
     const nums = d.sheets.map(s => parseInt(String(s.number).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
     const sh = F.newSheet('A-' + (nums.length ? Math.max(...nums) + 1 : 101));
+    this.pushHistory();
     this.setState({ doc: { ...d, sheets: [...d.sheets, sh], active: sh.id }, ...this.resetTransient() });
   }
   delSheet() {
@@ -213,11 +215,13 @@ export const Project = Base => class extends Base {
     const i = d.sheets.indexOf(s), rest = d.sheets.filter(q => q !== s);
     this.replaceDoc({ ...d, sheets: rest, active: rest[Math.max(0, i - 1)].id }, `Deleted ${s.number}`);
   }
-  // Swaps in a new version of the project and offers an undo, because these changes are outside the shape history.
+  // A large change to the project, such as a deleted sheet. The message has an UNDO button, which
+  // works while no other change comes after this one.
   replaceDoc(doc, msg) {
     const prev = this.state.doc;
+    this.pushHistory();
     this.setState({ doc, ...this.resetTransient() });
-    this.flash(msg, 7000, { label: 'UNDO', run: () => { this.setState({ doc: prev, toast: null, ...this.resetTransient() }); } });
+    this.flash(msg, 7000, { label: 'UNDO', run: () => { this.setState({ toast: null }); if (this.undoStack[this.undoStack.length - 1] === prev) this.doUndo(); } });
   }
   newDoc() {
     const d = this.state.doc, doc = F.blankDoc();

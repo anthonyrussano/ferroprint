@@ -34,6 +34,7 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Share a project with a link. The link holds the whole project in its `#` part, which the browser does not send to a server.
 - Draw freehand strokes and walls. Hold Shift to snap a wall to 45°.
 - Organize a project in numbered sheets, each with its own title block and drawing units (px, ft or m).
+- Undo and redo every change to the project with `Ctrl Z` and `Ctrl Shift Z`: shapes, connectors, sheets, the title block and the setup. Undo goes back to the sheet where the change happened. It does not change the pan or the zoom.
 - Switch between a blueprint (white on blue) and a whiteprint (blue on white) look.
 - Export a sheet as PNG or SVG with a title block. Export the full project as JSON.
 
@@ -121,7 +122,7 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/editor/pointer.js` | Pan, zoom, select, move, resize, connect and draw with the pointer |
 | `src/editor/commands.js` | Label editing, commands on the selection, and the keyboard |
 | `src/editor/project.js` | Autosave, sheets, templates, share links and JSON files |
-| `src/editor/history.js` | Undo and redo |
+| `src/editor/history.js` | Undo and redo for the whole project |
 | `src/editor/exporter.js` | PNG and SVG export |
 | `src/editor/canvas.jsx` | The sheet, the selection overlay and the label editor |
 | `src/chrome.jsx` | Toolbars, inspector, panels, title block and status bar |

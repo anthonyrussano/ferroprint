@@ -1,26 +1,37 @@
-// Undo and redo: snapshots of the active sheet's shapes and connectors.
+// Undo and redo for the whole project: shapes, connectors, sheets, the title block and the setup.
+// The editor never changes a document in place, so a version is a reference to a document, and
+// the versions share every part that did not change.
 import { HISTORY_LIMIT } from './util.js';
 
+const pushTo = (stack, doc) => {
+  if (stack[stack.length - 1] === doc) return;
+  stack.push(doc);
+  if (stack.length > HISTORY_LIMIT) stack.shift();
+};
+// Undo does not move the view. Each sheet keeps its current pan and zoom.
+function keepViews(doc, cur) {
+  const views = new Map(cur.sheets.map(s => [s.id, s.view]));
+  return { ...doc, sheets: doc.sheets.map(s => (views.has(s.id) && views.get(s.id) !== s.view ? { ...s, view: views.get(s.id) } : s)) };
+}
+
 export const History = Base => class extends Base {
-  // ---------- history: snapshots of the active sheet's shapes and connectors
+  // Call this before a change. Changes with the same key in a short time make one step, for example typing.
   pushHistory(key) {
     const now = Date.now();
     if (key && key === this.hKey && now - this.hT < 1200) { this.hT = now; return; }
     this.hKey = key; this.hT = now;
-    const s = this.sheet();
-    this.undoStack.push(JSON.stringify({ nodes: s.nodes, edges: s.edges }));
-    if (this.undoStack.length > HISTORY_LIMIT) this.undoStack.shift();
     this.redoStack = [];
+    // The updater runs after the updates that come before it, so it sees the version just before this change.
+    this.setState(st => { pushTo(this.undoStack, st.doc); return null; });
   }
+  // A step goes back to the sheet where the change happened, so the change is in view.
   stepHistory(from, to) {
     if (!from.length) return;
-    const s = this.sheet();
-    to.push(JSON.stringify({ nodes: s.nodes, edges: s.edges }));
-    const p = JSON.parse(from.pop());
+    const p = from.pop();
     this.hKey = null;
-    this.updSheet(() => p);
-    this.setState({ sel: [], editing: null });
+    this.setState(st => { pushTo(to, st.doc); return { doc: keepViews(p, st.doc), sel: [], editing: null }; });
   }
   doUndo() { this.stepHistory(this.undoStack, this.redoStack); }
   doRedo() { this.stepHistory(this.redoStack, this.undoStack); }
+  clearHistory() { this.undoStack = []; this.redoStack = []; this.hKey = null; }
 };

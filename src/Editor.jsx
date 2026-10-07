@@ -124,8 +124,8 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
   setView(v) { this.updSheet(() => ({ view: v })); }
   setNodes(fn) { this.updSheet(s => ({ nodes: fn(s.nodes) })); }
   setEdges(fn) { this.updSheet(s => ({ edges: fn(s.edges) })); }
-  setMeta(key, val) { this.setState(st => ({ doc: { ...st.doc, meta: { ...st.doc.meta, [key]: val } } })); }
-  setSettings(patch) { this.setState(st => ({ doc: { ...st.doc, settings: { ...st.doc.settings, ...patch } } })); }
+  setMeta(key, val) { this.pushHistory('meta-' + key); this.setState(st => ({ doc: { ...st.doc, meta: { ...st.doc.meta, [key]: val } } })); }
+  setSettings(patch) { this.pushHistory(); this.setState(st => ({ doc: { ...st.doc, settings: { ...st.doc.settings, ...patch } } })); }
   nodeMap(s) { const m = {}; s.nodes.forEach(n => { m[n.id] = n; }); return m; }
   toWorld(cx, cy) { const r = this.canvasEl ? this.canvasEl.getBoundingClientRect() : { left: 0, top: 0 }, v = this.view(); return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k }; }
 
@@ -144,7 +144,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     const wide = st.win.w >= 1080, tiny = st.win.w < 640;
     const tool = st.space ? 'hand' : st.tool;
     const idx = d.sheets.findIndex(q => q.id === s.id), meta = d.meta;
-    const updS = key => val => this.updSheet(() => ({ [key]: val }));
+    const updS = key => val => { this.pushHistory(`sheet-${key}-${s.id}`); this.updSheet(() => ({ [key]: val })); };
     const vars = {
       '--paper': t.paper, '--ink': t.ink, '--muted': t.muted, '--panel': t.panel, '--hover': t.hover, '--line': t.line,
       '--accent': t.accent, '--accent-ink': t.accentInk, '--vig': t.vig, '--pal-top': st.palTop + 'px'
@@ -230,7 +230,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
               rev: meta.rev, setRev: val => this.setMeta('rev', val),
               num: s.number, setNum: updS('number'), name: s.name, setName: updS('name'),
               scale: F.scaleLabel(s.unit, g), sheetOf: `${idx + 1} OF ${d.sheets.length}`,
-              cycleUnit: () => this.updSheet(q => ({ unit: F.UNITS[(F.UNITS.indexOf(q.unit) + 1) % F.UNITS.length] }))
+              cycleUnit: () => { this.pushHistory(); this.updSheet(q => ({ unit: F.UNITS[(F.UNITS.indexOf(q.unit) + 1) % F.UNITS.length] })); }
             }}
           />
         )}
