@@ -81,6 +81,14 @@ npm install
 npm run dev
 ```
 
+To run the tests, run:
+
+```sh
+npm test
+```
+
+The tests are in `test/`. They use Vitest and run in Node.
+
 To make a production build in `dist/`, run:
 
 ```sh
@@ -90,7 +98,7 @@ npm run preview
 
 ## Deploy
 
-The workflow in `.github/workflows/pages.yml` builds the app and publishes `dist/` to GitHub Pages on every push to `main`. The build uses relative asset paths, so it works from any repository name.
+The workflow in `.github/workflows/pages.yml` runs the tests, builds the app and publishes `dist/` to GitHub Pages on every push to `main`. If a test fails, the workflow stops and the site does not change. The build uses relative asset paths, so it works from any repository name.
 
 ## Project layout
 
