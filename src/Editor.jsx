@@ -189,7 +189,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
             snap: () => this.setState({ snap: !st.snap }), dims: () => this.setState({ dims: !st.dims }),
             blue: () => this.setState({ mode: 'blue' }), white: () => this.setState({ mode: 'white' }),
             projects: () => this.showProjects(), newDoc: () => this.togglePanel('new'), open: () => this.openFile(), share: () => (st.panel === 'share' ? this.shareUI.close() : this.openShare()),
-            png: () => this.exportImg('png'), svg: () => this.exportImg('svg'), json: () => this.exportJSON(),
+            png: () => this.exportImg('png'), svg: () => this.exportImg('svg'), pdf: () => this.exportPDF(), json: () => this.exportJSON(),
             setup: () => this.togglePanel('setup'), help: () => this.togglePanel('help'), clean: () => this.toggleClean()
           }}
         />}

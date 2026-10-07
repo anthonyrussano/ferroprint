@@ -125,6 +125,7 @@ export function TopBar({ barRef, save, canUndo, canRedo, snap, dims, mode, panel
         <div className="group-label split">EXPORT</div>
         <Btn className="plain" title="Download this sheet as PNG" onClick={on.png}>PNG</Btn>
         <Btn className="plain" title="Download this sheet as SVG" onClick={on.svg}>SVG</Btn>
+        <Btn className="plain" title="Download all sheets as one PDF, one sheet on each A3 page" onClick={on.pdf}>PDF</Btn>
         <Btn className="plain" title={`Download all sheets as JSON (${MOD}S)`} onClick={on.json}>JSON</Btn>
       </div>
       <div className="group">

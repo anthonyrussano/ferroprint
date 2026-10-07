@@ -8,6 +8,7 @@ import { renderNode, renderEdge } from '../draw.jsx';
 import { loadCloud } from '../cloud.js';
 import { logoSVG } from '../logo.jsx';
 import { fontCSS } from '../fonts.js';
+import { makePDF, deflate, rgbOf } from '../pdf.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 // The largest side of a PNG, in pixels. Larger canvases fail in some browsers.
@@ -46,6 +47,9 @@ export function svgToCanvas(r, scale) {
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(r.str);
   });
 }
+// The long side of a sheet in a PDF, in pixels. On A3 this is about 200 pixels for each inch.
+const PDF_PX = 3300;
+const rgbFloat = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255);
 const pngOf = c => new Promise((ok, bad) => c.toBlob(b => (b ? ok(b) : bad(new Error('The PNG encoder returned no data'))), 'image/png'));
 
 export const Exporter = Base => class extends Base {
@@ -97,6 +101,30 @@ export const Exporter = Base => class extends Base {
     } catch (err) {
       console.warn(err);
       this.flash('Export failed. Try SVG, or try again.', 4000);
+    }
+    this._busy = false;
+  }
+  // All sheets in one PDF, one sheet on each A3 page. The outline of the PDF names each sheet.
+  async exportPDF() {
+    if (this._busy) return;
+    if (typeof CompressionStream !== 'function') { this.flash('This browser cannot write a PDF. Use PNG or SVG.', 4000); return; }
+    this._busy = true;
+    const d = this.state.doc, pages = [];
+    clearTimeout(this._toastT);
+    try {
+      for (const [i, s] of d.sheets.entries()) {
+        this.setState({ toast: { msg: `Exporting PDF… sheet ${i + 1} of ${d.sheets.length}` } });
+        const r = await this.buildSVG(s);
+        const c = await svgToCanvas(r, F.clamp(PDF_PX / Math.max(r.W, r.H), 0.5, 4));
+        pages.push({ title: `${s.number} ${s.name}`, image: { w: c.width, h: c.height, data: await deflate(rgbOf(c)) }, background: rgbFloat(F.THEMES[this.state.mode].paper) });
+        c.width = c.height = 0;
+      }
+      const name = `${F.slug(d.meta.project || 'ferroprint')}.pdf`;
+      F.download(makePDF(pages, { title: d.meta.project || 'Ferroprint' }), name);
+      this.flash(`Downloaded ${name}`);
+    } catch (err) {
+      console.warn(err);
+      this.flash('PDF export failed. Try PNG, or try again.', 4000);
     }
     this._busy = false;
   }

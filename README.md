@@ -44,7 +44,7 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Organize a project in numbered sheets, each with its own title block and drawing units (px, ft or m).
 - Undo and redo every change to the project with `Ctrl Z` and `Ctrl Shift Z`: shapes, connectors, sheets, the title block and the setup. Undo goes back to the sheet where the change happened. It does not change the pan or the zoom.
 - Switch between a blueprint (white on blue) and a whiteprint (blue on white) look.
-- Export a sheet as PNG or SVG with a title block. Export the full project as JSON.
+- Export a sheet as PNG or SVG with a title block. Export all sheets as one PDF, with one sheet on each A3 page and a bookmark for each sheet. Export the full project as JSON.
 
 Press `?` in the app to see all keyboard shortcuts.
 
@@ -129,6 +129,7 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/engine.js` | Shapes, themes, geometry, units, document validation and export helpers |
 | `src/draw.jsx` | SVG drawing for shapes, connectors and dimension marks |
 | `src/library.jsx` | Library symbols, their default sizes and label positions |
+| `src/pdf.js` | A small PDF writer for the PDF export |
 | `src/route.js` | Routes for elbow connectors around shapes |
 | `src/cloud.js` | Loads the cloud icon sets on demand, and holds the boundary frames |
 | `src/templates.js` | Starter templates |
