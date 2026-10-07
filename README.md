@@ -29,6 +29,7 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Set a UML relation on a connector: association, inheritance, realization, dependency, aggregation or composition. Add a multiplicity at each end, such as `1` or `0..*`.
 - Start a sheet from a template: an AWS three-tier web app, an Azure hub-and-spoke network, a Google Cloud data pipeline, an Alibaba Cloud web app, a class diagram, a furnished apartment, a checkout flow or a microservices overview.
 - Connect shapes with elbow, straight or curved connectors. Drag from a port to fix the side where a connector leaves a shape, and release on a port to fix the side where it arrives. Drag the round handle on a selected connector to add a bend. Double-click a bend to remove it.
+- An elbow connector without bends goes around the shapes in its way. Zones, lines and freehand strokes are not in the way. A bend that you add on a route around shapes keeps the rest of the route.
 - To move an end of a connector to a different shape, select the connector and drag the end. Release the end on a port to fix the side.
 - Draw free arrows with the arrow tool (`A`). A line can have an arrowhead at its end or at both ends. **REVERSE** swaps the ends.
 - Select more than one item to set the line, the fill, the text size, the arrows or the route of all of them at once. **TO FRONT** and **TO BACK** move all the selected shapes.
@@ -128,6 +129,7 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/engine.js` | Shapes, themes, geometry, units, document validation and export helpers |
 | `src/draw.jsx` | SVG drawing for shapes, connectors and dimension marks |
 | `src/library.jsx` | Library symbols, their default sizes and label positions |
+| `src/route.js` | Routes for elbow connectors around shapes |
 | `src/cloud.js` | Loads the cloud icon sets on demand, and holds the boundary frames |
 | `src/templates.js` | Starter templates |
 | `src/share.js` | Share links: the project compressed into the URL |

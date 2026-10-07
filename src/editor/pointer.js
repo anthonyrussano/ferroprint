@@ -91,7 +91,10 @@ export const Pointer = Base => class extends Base {
     }
     if (kind === 'wp' || kind === 'wpadd') {
       // A bend handle moves a bend. A handle between bends adds one when the drag starts.
-      this.drag = { type: kind, id, i: Number(tg.getAttribute('data-i')), start: p, moved: false };
+      // On a route around shapes, the turns of the route become bends first, so the route keeps its shape.
+      const s = this.sheet(), ed = s.edges.find(x => x.id === id);
+      const geo = kind === 'wpadd' && ed && !(ed.pts && ed.pts.length) ? F.edgeGeom(ed, this.nodeMap(s), this.obstaclesFor(s)) : null;
+      this.drag = { type: kind, id, i: Number(tg.getAttribute('data-i')), start: p, moved: false, seed: geo && geo.seed, sides: geo && geo.sides };
       return;
     }
     if (kind === 'handle') {
@@ -272,8 +275,14 @@ export const Pointer = Base => class extends Base {
         d.moved = true;
         this.pushHistory();
         if (d.type === 'wpadd') {
-          const id = d.id, i = d.i;
-          this.setEdges(es => es.map(x => (x.id === id ? { ...x, pts: [...(x.pts || []).slice(0, i), { x: p.x, y: p.y }, ...(x.pts || []).slice(i)] } : x)));
+          const id = d.id, i = d.i, seed = d.seed, sides = d.sides;
+          this.setEdges(es => es.map(x => {
+            if (x.id !== id) return x;
+            const base = x.pts && x.pts.length ? x.pts : seed || [];
+            const y = { ...x, pts: [...base.slice(0, i), { x: p.x, y: p.y }, ...base.slice(i)] };
+            if (seed && sides) { if (!x.fromSide) y.fromSide = sides[0]; if (!x.toSide) y.toSide = sides[1]; }
+            return y;
+          }));
           d.type = 'wp';
         }
       }

@@ -1,6 +1,6 @@
 // Editor chrome: the sheet frame, toolbars, inspector, panels, title block and status bar.
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { TYPE_NAME, TOOL_NAMES, KEY_OF, LABELLESS, NOFILL, NOLINE, TURN, trunc, toolName, nodeTitle, nodeMeta, bounds, UML, REL, RELS, classLayout } from './engine.js';
+import { TYPE_NAME, TOOL_NAMES, KEY_OF, LABELLESS, NOFILL, NOLINE, TURN, trunc, toolName, nodeTitle, nodeMeta, bounds, UML, REL, RELS, classLayout, obstaclesOf } from './engine.js';
 import { renderNode, renderEdge } from './draw.jsx';
 import { TEMPLATES } from './templates.js';
 import { ICONS, PALETTE, LIBRARY_ICON, PIN_ICON } from './icons.jsx';
@@ -549,7 +549,7 @@ function TemplatePreview({ sheet: raw, ctx }) {
   const sheet = { ...raw, nodes: raw.nodes.map(n => (n.type === 'class' ? (lay => ({ ...n, w: Math.max(n.w, lay.minW), h: lay.h }))(classLayout(n, ctx.L, ctx.caps)) : n)) };
   const b = bounds(sheet.nodes) || { x: 0, y: 0, w: 100, h: 60 }, pad = 30;
   const map = Object.fromEntries(sheet.nodes.map(n => [n.id, n]));
-  const c = { ...ctx, unit: sheet.unit };
+  const c = { ...ctx, unit: sheet.unit, obstacles: obstaclesOf(sheet.nodes) };
   return (
     <svg className="tpreview" viewBox={`${b.x - pad} ${b.y - pad} ${b.w + 2 * pad} ${b.h + 2 * pad}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
       {sheet.nodes.filter(n => n.type === 'zone').map(n => renderNode(n, c))}

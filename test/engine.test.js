@@ -194,3 +194,79 @@ describe('image files', () => {
     expect(F.pruneFiles(doc([sheet([])], { files: { f1: PNG } })).files).toBeUndefined();
   });
 });
+
+describe('routes around shapes', () => {
+  const a = box('a', 0, 0), b = box('b', 400, 0), wall = box('w', 180, -40, 60, 140);
+  const map = { a, b, w: wall };
+  const segs = d => d.replace(/[ML]/g, ' ').trim().split(/\s+/).map(Number).reduce((acc, v, i, all) => (i % 2 ? acc : [...acc, { x: v, y: all[i + 1] }]), []);
+  const hits = (d, o) => {
+    const p = segs(d);
+    return p.slice(1).some((q, i) => {
+      const s = p[i], x0 = Math.min(s.x, q.x), x1 = Math.max(s.x, q.x), y0 = Math.min(s.y, q.y), y1 = Math.max(s.y, q.y);
+      return x1 > o.x && x0 < o.x + o.w && y1 > o.y && y0 < o.y + o.h;
+    });
+  };
+
+  it('keeps the simple route when nothing is in the way', () => {
+    const e = { from: 'a', to: 'b', route: 'elbow' };
+    expect(F.edgeGeom(e, { a, b }, F.obstaclesOf([a, b])).d).toBe(F.edgeGeom(e, { a, b }).d);
+  });
+
+  it('goes around a shape between the two ends', () => {
+    const e = { from: 'a', to: 'b', route: 'elbow' };
+    expect(hits(F.edgeGeom(e, map).d, wall)).toBe(true);
+    const g = F.edgeGeom(e, map, F.obstaclesOf([a, b, wall]));
+    expect(hits(g.d, wall)).toBe(false);
+    expect(g.seed.length).toBeGreaterThan(0);
+    expect(g.p1.x === 100 || g.p1.y === 0 || g.p1.y === 60).toBe(true);
+  });
+
+  it('keeps a fixed side', () => {
+    const g = F.edgeGeom({ from: 'a', to: 'b', route: 'elbow', fromSide: 'right', toSide: 'left' }, map, F.obstaclesOf([a, b, wall]));
+    expect(g.p1).toEqual({ x: 100, y: 30 });
+    expect(g.p2).toEqual({ x: 400, y: 30 });
+    expect(hits(g.d, wall)).toBe(false);
+  });
+
+  it('does not route a connector with bends or a straight connector', () => {
+    const obs = F.obstaclesOf([a, b, wall]);
+    expect(hits(F.edgeGeom({ from: 'a', to: 'b', route: 'straight' }, map, obs).d.replace(/[^\d. ML-]/g, ''), wall)).toBe(true);
+    expect(F.edgeGeom({ from: 'a', to: 'b', route: 'elbow', pts: [{ x: 210, y: 30 }] }, map, obs).seed).toBeUndefined();
+  });
+
+  it('ignores a shape that holds an end', () => {
+    const frame = { ...box('f', -50, -50, 300, 200), type: 'window' };
+    const inner = box('i', 0, 0), out = box('o', 500, 0);
+    const g = F.edgeGeom({ from: 'i', to: 'o', route: 'elbow' }, { i: inner, o: out, f: frame }, F.obstaclesOf([frame, inner, out]));
+    expect(g.seed).toBeUndefined();
+  });
+
+  it('routes a grid of 400 shapes in reasonable time', () => {
+    const nodes = [];
+    for (let i = 0; i < 20; i++) for (let j = 0; j < 20; j++) nodes.push(box(`n${i}-${j}`, i * 200, j * 140));
+    const m = Object.fromEntries(nodes.map(n => [n.id, n])), obs = F.obstaclesOf(nodes);
+    const t0 = performance.now();
+    const g = F.edgeGeom({ from: 'n0-0', to: 'n19-19', route: 'elbow' }, m, obs);
+    expect(performance.now() - t0).toBeLessThan(500);
+    expect(obs.some(o => o.id !== 'n0-0' && o.id !== 'n19-19' && hits(g.d, o))).toBe(false);
+  });
+});
+
+describe('bends', () => {
+  const a = box('a', 0, 0), b = box('b', 400, 0), map = { a, b };
+  const pts = d => d.replace(/[ML]/g, ' ').trim().split(/\s+/).map(Number).reduce((acc, v, i, all) => (i % 2 ? acc : [...acc, { x: v, y: all[i + 1] }]), []);
+
+  it('shows a bend above a straight connector as an arch', () => {
+    const g = F.edgeGeom({ from: 'a', to: 'b', route: 'elbow', pts: [{ x: 250, y: -40 }] }, map);
+    const p = pts(g.d);
+    expect(p.some(q => q.x === 250 && q.y === -40)).toBe(true);
+    // No run turns back on itself.
+    const dirs = p.slice(1).map((q, i) => Math.sign(q.x - p[i].x) + 2 * Math.sign(q.y - p[i].y));
+    expect(dirs.some((d, i) => i && d === -dirs[i - 1])).toBe(false);
+  });
+
+  it('keeps the old path when it does not turn back', () => {
+    const g = F.edgeGeom({ from: 'a', to: 'b', route: 'elbow', pts: [{ x: 250, y: 200 }] }, { a, b: box('b', 400, 300) });
+    expect(g.d).toBe('M100 30 L250 30 L250 330 L400 330');
+  });
+});

@@ -1,6 +1,7 @@
 // Ferroprint engine: constants, geometry, document model, export helpers.
 import { SYMBOLS } from './library.jsx';
 import { isCloudKey, cloudIcon, cloudLabel, cloudProvider, PROVIDER_NAME, FRAME } from './cloud.js';
+import { route as findRoute, crosses, MARGIN } from './route.js';
 
 export const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
@@ -186,6 +187,8 @@ function simplify(pts) {
     while (out.length >= 3) {
       const [a, b, c] = out.slice(-3);
       if (Math.abs((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) > 0.01) break;
+      // A point where the path turns back is a corner, not a point in the middle of a run.
+      if ((b.x - a.x) * (c.x - b.x) + (b.y - a.y) * (c.y - b.y) < 0) break;
       out.splice(out.length - 2, 1);
     }
   });
@@ -207,6 +210,38 @@ function join(a, b, axis) {
   if (Math.abs(a.x - b.x) < 0.01) return { pts: [b], axis: 'v' };
   if (Math.abs(a.y - b.y) < 0.01) return { pts: [b], axis: 'h' };
   return { pts: [axis === 'h' ? { x: b.x, y: a.y } : { x: a.x, y: b.y }, b], axis: axis === 'h' ? 'v' : 'h' };
+}
+// The direction from a to b: 0 right, 1 down, 2 left, 3 up, or -1 for the same point.
+const dirOf = (a, b) => (Math.abs(a.x - b.x) > 0.01 ? (b.x > a.x ? 0 : 2) : Math.abs(a.y - b.y) > 0.01 ? (b.y > a.y ? 1 : 3) : -1);
+const turnCost = (d0, d1) => (d0 < 0 || d1 < 0 || d0 === d1 ? 0 : (d0 + 2) % 4 === d1 ? 100 : 1);
+function turnsBack(pts) {
+  let d = -1;
+  for (let i = 1; i < pts.length; i++) {
+    const n = dirOf(pts[i - 1], pts[i]);
+    if (n < 0) continue;
+    if (d >= 0 && (d + 2) % 4 === n) return true;
+    d = n;
+  }
+  return false;
+}
+// The L for each run between the points qs, with the fewest turns and no run that turns back.
+// d0 is the direction into the first point, and dEnd the direction out of the last point.
+function fewestTurns(qs, d0, dEnd) {
+  let best = new Map([[d0, { cost: 0, legs: [] }]]);
+  for (let i = 0; i < qs.length - 1; i++) {
+    const a = qs[i], b = qs[i + 1], next = new Map();
+    const opts = Math.abs(a.x - b.x) < 0.01 || Math.abs(a.y - b.y) < 0.01 ? [[b]] : [[{ x: b.x, y: a.y }, b], [{ x: a.x, y: b.y }, b]];
+    best.forEach((st, din) => opts.forEach(o => {
+      let cost = st.cost, d = din, cur = a;
+      o.forEach(q => { const n = dirOf(cur, q); if (n >= 0) { cost += turnCost(d, n); d = n; } cur = q; });
+      const had = next.get(d);
+      if (!had || cost < had.cost) next.set(d, { cost, legs: [...st.legs, o] });
+    }));
+    best = next;
+  }
+  let out = null;
+  best.forEach((st, d) => { const c = st.cost + turnCost(d, dEnd); if (!out || c < out.cost) out = { cost: c, legs: st.legs }; });
+  return out.legs;
 }
 // The turns between two stubs when the connector has no bends.
 function elbowTurns(a1, n1, b2, n2) {
@@ -235,13 +270,46 @@ function autoGeom(e, a, b, route) {
   if (s1 === 'left' || s1 === 'right') { const mx = Math.round((p1.x + p2.x) / 2); pts = [p1, { x: mx, y: p1.y }, { x: mx, y: p2.y }, p2]; }
   else { const my = Math.round((p1.y + p2.y) / 2); pts = [p1, { x: p1.x, y: my }, { x: p2.x, y: my }, p2]; }
   const mid = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
-  return { d: 'M' + pts.map(q => `${q.x} ${q.y}`).join(' L'), p1, p2, mid, endDir: { x: -NORM[s2].x, y: -NORM[s2].y }, startDir: { x: -NORM[s1].x, y: -NORM[s1].y }, handles: [{ ...mid, i: 0 }] };
+  return { d: 'M' + pts.map(q => `${q.x} ${q.y}`).join(' L'), p1, p2, mid, endDir: { x: -NORM[s2].x, y: -NORM[s2].y }, startDir: { x: -NORM[s1].x, y: -NORM[s1].y }, handles: [{ ...mid, i: 0 }], pts };
 }
 
 // Connector geometry. `handles` are the points where a drag adds a bend: index i inserts before bend i.
-export function edgeGeom(e, map) {
+// With `obstacles`, an elbow connector without bends goes around the shapes in its way. Its geometry then
+// has `seed`: the turns of the route, which become the bends when a drag adds a bend.
+export function edgeGeom(e, map, obstacles) {
   const a = map[e.from], b = map[e.to];
   if (!a || !b) return null;
+  const geo = baseGeom(e, a, b);
+  if ((e.route || 'elbow') !== 'elbow' || (e.pts && e.pts.length) || !obstacles || !obstacles.length || !geo.pts) return geo;
+  return avoid(geo, a, b, fixedSide(e.fromSide), fixedSide(e.toSide), obstacles) || geo;
+}
+// The boxes that elbow connectors go around: every shape except zones, lines and freehand strokes.
+export const obstaclesOf = nodes => nodes.filter(n => n.type !== 'zone' && n.type !== 'path' && n.type !== 'line').map(n => ({ id: n.id, ...hitBox(n) }));
+const ALL_SIDES = ['top', 'right', 'bottom', 'left'];
+const grown = (b, m) => ({ x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m });
+function avoid(geo, a, b, fs, ts, obstacles) {
+  // A shape that touches an end, or holds it, such as a window around its buttons, is not in the way.
+  const ga = grown(a, MARGIN), gb = grown(b, MARGIN);
+  const others = obstacles.filter(o => o.id !== a.id && o.id !== b.id && !inter(o, ga) && !inter(o, gb));
+  if (inter(ga, gb) || !crosses(geo.pts, others)) return null;
+  // Route among the shapes near the two ends first. If the route meets a shape further out, add it and route again.
+  const near = grown(rectFrom({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, { x: Math.max(a.x + a.w, b.x + b.w), y: Math.max(a.y + a.h, b.y + b.h) }), 160);
+  let use = others.filter(o => inter(o, near));
+  for (let k = 0; k < 4; k++) {
+    const r = findRoute(a, b, fs ? [fs] : ALL_SIDES, ts ? [ts] : ALL_SIDES, use);
+    if (!r) return null;
+    const all = simplify(r.pts), hit = others.filter(o => !use.includes(o) && crosses(all, [o]));
+    if (!hit.length) {
+      const handles = [];
+      all.slice(1).forEach((q, i) => { if (Math.hypot(q.x - all[i].x, q.y - all[i].y) > 24) handles.push({ x: (q.x + all[i].x) / 2, y: (q.y + all[i].y) / 2, i }); });
+      const p1 = all[0], p2 = all[all.length - 1];
+      return { d: polyD(all), p1, p2, mid: pointAt(all, 0.5), endDir: unit(all[all.length - 2], p2), startDir: unit(all[1], p1), handles, pts: all, seed: all.slice(1, -1), sides: r.sides };
+    }
+    use = [...use, ...hit];
+  }
+  return null;
+}
+function baseGeom(e, a, b) {
   const route = e.route || 'elbow', wp = e.pts || [], fs = fixedSide(e.fromSide), ts = fixedSide(e.toSide);
   if (!fs && !ts && !wp.length) return autoGeom(e, a, b, route);
   const ac = centerOf(a), bc = centerOf(b);
@@ -273,15 +341,17 @@ export function edgeGeom(e, map) {
   let pieces;
   if (!wp.length) pieces = [[p1, a1, ...elbowTurns(a1, n1, b2, n2), b2, p2]];
   else {
-    pieces = [];
-    let axis = n1.x ? 'h' : 'v', piece = [p1, a1], cur = a1;
-    wp.forEach(w => { const r = join(cur, w, axis); piece.push(...r.pts); pieces.push(piece); piece = [w]; axis = r.axis; cur = w; });
-    const r = join(cur, b2, axis);
-    piece.push(...r.pts, p2);
-    pieces.push(piece);
+    // Each run between two bends is an L. The first rule alternates the order of the two parts.
+    let axis = n1.x ? 'h' : 'v', cur = a1, legs = [];
+    [...wp, b2].forEach(w => { const r = join(cur, w, axis); legs.push(r.pts); axis = r.axis; cur = w; });
+    // A run that turns back on itself hides its bend, so then the path with the fewest turns is used.
+    if (turnsBack([p1, a1, ...legs.flat(), p2])) legs = fewestTurns([a1, ...wp, b2], dirOf(p1, a1), dirOf(b2, p2));
+    pieces = legs.map((leg, i) => [i ? wp[i - 1] : a1, ...leg]);
+    pieces[0].unshift(p1);
+    pieces[pieces.length - 1].push(p2);
   }
   const all = simplify(pieces.flat());
-  return finish(pieces, p1, p2, polyD(all), unit(all[all.length - 2] || p1, p2), unit(all[1] || p2, p1));
+  return { ...finish(pieces, p1, p2, polyD(all), unit(all[all.length - 2] || p1, p2), unit(all[1] || p2, p1)), pts: all };
 }
 function finish(pieces, p1, p2, d, endDir, startDir) {
   const all = simplify(pieces.flat());

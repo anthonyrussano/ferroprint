@@ -11,11 +11,12 @@ export const Canvas = Base => class extends Base {
     this.nodeCache.set(n, { key, el });
     return el;
   }
+  // A connector draws again when it, its shapes or the shapes in its way change.
   cachedEdge(e, map, ctx, key, selected) {
-    const a = map[e.from], b = map[e.to], c = this.edgeCache.get(e);
-    if (c && c.key === key && c.a === a && c.b === b && c.selected === selected) return c.el;
+    const a = map[e.from], b = map[e.to], obs = ctx.obstacles, c = this.edgeCache.get(e);
+    if (c && c.key === key && c.a === a && c.b === b && c.obs === obs && c.selected === selected) return c.el;
     const el = renderEdge(e, map, ctx, selected);
-    this.edgeCache.set(e, { key, a, b, selected, el });
+    this.edgeCache.set(e, { key, a, b, obs, selected, el });
     return el;
   }
   renderOverlay(s, t, map, selSet) {
@@ -68,7 +69,7 @@ export const Canvas = Base => class extends Base {
       if (a) {
         const tg = st.temp.target && map[st.temp.target], dash = `${6 / k} ${4 / k}`;
         if (tg) {
-          const geo = F.edgeGeom({ from: a.id, to: tg.id, route: this.defRoute(), fromSide: st.temp.fromSide, toSide: st.temp.toSide }, map), p = 5 / k, o = 14 / k;
+          const geo = F.edgeGeom({ from: a.id, to: tg.id, route: this.defRoute(), fromSide: st.temp.fromSide, toSide: st.temp.toSide }, map, this.obstaclesFor(s)), p = 5 / k, o = 14 / k;
           if (geo) out.push(<path key="tmp" d={geo.d} fill="none" stroke={A} strokeWidth={1.6} strokeDasharray={dash} pointerEvents="none" />);
           out.push(<rect key="tgt" x={tg.x - p} y={tg.y - p} width={tg.w + 2 * p} height={tg.h + 2 * p} fill="none" stroke={A} strokeWidth={2 / k} pointerEvents="none" />);
           // The ports of the target: release on one to fix the side where the connector arrives.
@@ -86,7 +87,7 @@ export const Canvas = Base => class extends Base {
       }
     }
     const selEdge = st.sel.length === 1 && !st.editing && !this.drag ? s.edges.find(x => x.id === st.sel[0]) : null;
-    const geoSel = selEdge && F.edgeGeom(selEdge, map);
+    const geoSel = selEdge && F.edgeGeom(selEdge, map, this.obstaclesFor(s));
     if (geoSel) {
       // Round handles add a bend. Square handles move a bend, and a double-click removes it.
       geoSel.handles.forEach(hd => out.push(<circle key={'wa' + hd.i} cx={hd.x} cy={hd.y} r={4 / k} fill={t.paper} stroke={A} strokeWidth={1.3 / k} data-k="wpadd" data-id={selEdge.id} data-i={hd.i} style={{ cursor: 'copy' }}><title>Drag to bend the connector</title></circle>));
@@ -161,7 +162,7 @@ export const Canvas = Base => class extends Base {
       else if (n.type === 'note' || n.type === 'input') { box = { x: n.x, y: n.y, w: n.w, h: n.h }; align = 'left'; }
       else box = { x: n.x, y: n.y, w: Math.max(n.w, 120), h: Math.max(n.h, 40) };
     } else {
-      const e = s.edges.find(q => q.id === ed.id), geo = e && F.edgeGeom(e, this.nodeMap(s));
+      const e = s.edges.find(q => q.id === ed.id), geo = e && F.edgeGeom(e, this.nodeMap(s), this.obstaclesFor(s));
       if (!geo) return null;
       fs = 13; box = { x: geo.mid.x - 90, y: geo.mid.y - 18, w: 180, h: 36 };
     }

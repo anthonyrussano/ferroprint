@@ -47,7 +47,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     this.drag = null; this.clip = null; this.pasteN = 0;
     this.pointers = new Map();
     this.fontCache = {}; this.fontGen = 0;
-    this.nodeCache = new WeakMap(); this.edgeCache = new WeakMap(); this.classFit = new WeakMap(); this.cloudGen = 0;
+    this.nodeCache = new WeakMap(); this.edgeCache = new WeakMap(); this.classFit = new WeakMap(); this.obsCache = new WeakMap(); this.cloudGen = 0;
     this.barRef = createRef(); this.fileRef = createRef(); this.imageRef = createRef();
     this.canvasEl = null; this.contentEl = null;
     ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash', 'onCopy', 'onCut', 'onPaste', 'onDragOver', 'onDrop', 'onImageFile'].forEach(k => { this[k] = this[k].bind(this); });
@@ -113,7 +113,13 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
   g() { return this.state.doc.settings.grid; }
   letter() { return this.state.doc.settings.lettering === 'technical' ? F.LETTER.technical : F.LETTER.hand; }
   defRoute() { return this.state.doc.settings.route; }
-  drawCtx(s) { return { t: F.THEMES[this.state.mode], L: this.letter(), caps: this.state.doc.settings.caps, unit: s.unit, g: this.g(), files: this.state.doc.files }; }
+  drawCtx(s) { return { t: F.THEMES[this.state.mode], L: this.letter(), caps: this.state.doc.settings.caps, unit: s.unit, g: this.g(), files: this.state.doc.files, obstacles: this.obstaclesFor(s) }; }
+  // The shapes that elbow connectors go around. The list changes only when the shapes change.
+  obstaclesFor(s) {
+    let o = this.obsCache.get(s.nodes);
+    if (!o) { o = F.obstaclesOf(s.nodes); this.obsCache.set(s.nodes, o); }
+    return o;
+  }
   measure() { const r = this.canvasEl ? this.canvasEl.getBoundingClientRect() : null; return r && r.width ? { w: r.width, h: r.height } : this.state.size; }
   view() { return this.sheet().view || this.fitView() || { x: 160, y: 120, k: 1 }; }
   fitView() {

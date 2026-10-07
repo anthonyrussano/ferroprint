@@ -230,7 +230,7 @@ export function renderNode(n, ctx) {
 }
 
 export function renderEdge(e, map, ctx, selected) {
-  const { t, L } = ctx, geo = edgeGeom(e, map);
+  const { t, L } = ctx, geo = edgeGeom(e, map, ctx.obstacles);
   if (!geo) return null;
   const c = selected ? t.accent : t.ink, rel = REL[e.rel];
   const arrow = (key, p, u) => {
