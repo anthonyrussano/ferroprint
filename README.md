@@ -38,14 +38,14 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Switch between a blueprint (white on blue) and a whiteprint (blue on white) look.
 - Export a sheet as PNG or SVG with a title block. Export the full project as JSON.
 
+Press `?` in the app to see all keyboard shortcuts.
+
 ## Offline and privacy
 
 - After the first visit, Ferroprint opens without a network. A service worker keeps the app, the fonts and the 4 cloud icon sets in the browser.
 - The fonts are part of the app. Ferroprint sends no request to a font service or to any other server.
 - A new version replaces the old one when you open Ferroprint with a network.
 - An exported SVG or PNG carries its fonts, so it looks the same on a computer without these fonts.
-
-Press `?` in the app to see all keyboard shortcuts.
 
 ## How saving works
 
