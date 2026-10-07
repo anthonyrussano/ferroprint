@@ -27,6 +27,7 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Frame cloud diagrams with boundary frames: AWS Cloud, Region, VPC and subnets, Azure subscriptions, resource groups and virtual networks, Google Cloud projects and VPC networks, and Alibaba Cloud regions, VPCs and vSwitches. Each frame shows the provider's group icon in its tab.
 - Draw UML class diagrams with classes, abstract classes, interfaces, enums and packages from the library. A class box grows to fit its members. Double-click the name, the attributes or the operations to edit them in place. In the attributes and operations, Enter adds a line, and `Ctrl Enter` saves.
 - Set a UML relation on a connector: association, inheritance, realization, dependency, aggregation or composition. Add a multiplicity at each end, such as `1` or `0..*`.
+- Import a Mermaid flowchart or class diagram. Paste the Mermaid text on the sheet, use **FROM MERMAID** in **New**, or open a `.mmd` file or a Markdown file with a ` ```mermaid ` block. Ferroprint lays out the shapes in layers. Subgraphs become zones, and namespaces become UML packages.
 - Start a sheet from a template: an AWS three-tier web app, an Azure hub-and-spoke network, a Google Cloud data pipeline, an Alibaba Cloud web app, a class diagram, a furnished apartment, a checkout flow or a microservices overview.
 - Connect shapes with elbow, straight or curved connectors. Drag from a port to fix the side where a connector leaves a shape, and release on a port to fix the side where it arrives. Drag the round handle on a selected connector to add a bend. Double-click a bend to remove it.
 - An elbow connector without bends goes around the shapes in its way. Zones, lines and freehand strokes are not in the way. A bend that you add on a route around shapes keeps the rest of the route.
@@ -129,6 +130,8 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/engine.js` | Shapes, themes, geometry, units, document validation and export helpers |
 | `src/draw.jsx` | SVG drawing for shapes, connectors and dimension marks |
 | `src/library.jsx` | Library symbols, their default sizes and label positions |
+| `src/mermaid.js` | Reads Mermaid flowcharts and class diagrams, and makes a sheet |
+| `src/layout.js` | The layered layout for imported diagrams |
 | `src/pdf.js` | A small PDF writer for the PDF export |
 | `src/route.js` | Routes for elbow connectors around shapes |
 | `src/cloud.js` | Loads the cloud icon sets on demand, and holds the boundary frames |

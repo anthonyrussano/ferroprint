@@ -130,9 +130,9 @@ export const Clipboard = Base => class extends Base {
       else if (k === 'v') this.paste();
     }, KEY_FALLBACK_MS);
   }
-  // Text that is not a set of shapes becomes a text label.
+  // Mermaid text becomes a diagram. Other text becomes a text label.
   pasteText(text, at) {
-    this.addText(text, at);
+    if (!this.importMermaid(text)) this.addText(text, at);
   }
 
   // ---------- drops
@@ -149,8 +149,8 @@ export const Clipboard = Base => class extends Base {
       let i = 0;
       files.forEach(f => {
         if (f.type.startsWith('image/')) this.addImage(f, p, i++);
-        else if (/\.json$/i.test(f.name) || f.type === 'application/json') this.readFile(f);
-        else this.flash(`Ferroprint cannot open ${f.name}. Drop an image or a Ferroprint JSON file.`, 4000);
+        else if (/\.(json|mmd|mermaid|md|txt)$/i.test(f.name) || f.type === 'application/json') this.readFile(f);
+        else this.flash(`Ferroprint cannot open ${f.name}. Drop an image, a Ferroprint JSON file or a Mermaid file.`, 4000);
       });
       return;
     }

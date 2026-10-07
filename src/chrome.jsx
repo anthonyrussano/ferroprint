@@ -120,7 +120,7 @@ export function TopBar({ barRef, save, canUndo, canRedo, snap, dims, mode, panel
       <div className="group">
         <Btn on={panel === 'projects'} title="All projects in this browser" onClick={on.projects}>Projects</Btn>
         <Btn on={panel === 'new'} title="A blank project, a blank sheet or a template" onClick={on.newDoc}>New</Btn>
-        <Btn title={`Open a Ferroprint JSON file as a new project (${MOD}O)`} onClick={on.open}>Open</Btn>
+        <Btn title={`Open a Ferroprint JSON file as a new project, or a Mermaid file as a sheet (${MOD}O)`} onClick={on.open}>Open</Btn>
         <Btn on={panel === 'share'} title="Share this project with a link" onClick={on.share}>Share</Btn>
         <div className="group-label split">EXPORT</div>
         <Btn className="plain" title="Download this sheet as PNG" onClick={on.png}>PNG</Btn>
@@ -560,8 +560,11 @@ function TemplatePreview({ sheet: raw, ctx }) {
   );
 }
 
+const MERMAID_SAMPLE = 'flowchart LR\n  web[Browser] --> api(API)\n  api --> db[(Orders DB)]';
+
 export const NewPanel = memo(function NewPanel({ theme, letter, caps, grid, on }) {
   const [, setGen] = useState(0);
+  const [mermaid, setMermaid] = useState('');
   const sheets = useMemo(() => Object.fromEntries(TEMPLATES.map(tp => [tp.id, tp.sheet()])), []);
   useEffect(() => onCloudLoad(() => setGen(g => g + 1)), []);
   useEffect(() => { [...new Set(TEMPLATES.flatMap(tp => tp.clouds))].forEach(id => loadCloud(id).catch(() => {})); }, []);
@@ -576,6 +579,10 @@ export const NewPanel = memo(function NewPanel({ theme, letter, caps, grid, on }
           <button type="button" className="act" onClick={on.blankDoc}>BLANK PROJECT</button>
         </div>
         <p className="hint tight">A blank sheet joins this project. A blank project starts a new project, and this project stays in PROJECTS.</p>
+        <div className="caption">FROM MERMAID · A FLOWCHART OR A CLASS DIAGRAM</div>
+        <textarea className="code" rows={4} value={mermaid} placeholder={MERMAID_SAMPLE} spellCheck={false} aria-label="Mermaid text" onChange={e => setMermaid(e.target.value)} />
+        <button type="button" className="act" disabled={!mermaid.trim()} onClick={() => on.mermaid(mermaid)}>DRAW THE MERMAID DIAGRAM</button>
+        <p className="hint tight">The diagram fills this sheet when the sheet is empty, or else it goes on a new sheet. You can also paste Mermaid text on the sheet, or open a .mmd or Markdown file.</p>
         <div className="caption">TEMPLATES · EACH ONE ADDS A SHEET</div>
         <div className="templates">
           {TEMPLATES.map(tp => (

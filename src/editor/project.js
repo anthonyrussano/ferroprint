@@ -4,6 +4,7 @@ import { loadCloud, cloudSet, cloudFailed } from '../cloud.js';
 import { parseDoc, projectMeta, saveUI, setTabProject, writeJournal, clearJournal, storageUse, keepStorage } from '../storage.js';
 import { shareLink, sharedPayload, readShared, clearShared } from '../share.js';
 import { TEMPLATES } from '../templates.js';
+import { mermaidSheet } from '../mermaid.js';
 import { SAVE_DELAY, toolCloud } from './util.js';
 
 // Tabs tell each other when they save or delete a project.
@@ -196,10 +197,14 @@ export const Project = Base => class extends Base {
     if (id === this.state.doc.active) return;
     this.setState(st => ({ doc: { ...st.doc, active: id }, ...this.resetTransient() }));
   }
+  // The drawing number after the highest one in the project, such as A-104.
+  nextNumber() {
+    const nums = this.state.doc.sheets.map(s => parseInt(String(s.number).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
+    return 'A-' + (nums.length ? Math.max(...nums) + 1 : 101);
+  }
   addSheet() {
     const d = this.state.doc;
-    const nums = d.sheets.map(s => parseInt(String(s.number).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
-    const sh = F.newSheet('A-' + (nums.length ? Math.max(...nums) + 1 : 101));
+    const sh = F.newSheet(this.nextNumber());
     this.pushHistory();
     this.setState({ doc: { ...d, sheets: [...d.sheets, sh], active: sh.id }, ...this.resetTransient() });
   }
@@ -234,12 +239,27 @@ export const Project = Base => class extends Base {
   addTemplate(id) {
     const tpl = TEMPLATES.find(x => x.id === id);
     if (!tpl) return;
-    const d = this.state.doc;
-    const nums = d.sheets.map(sh => parseInt(String(sh.number).replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
-    const number = 'A-' + (nums.length ? Math.max(...nums) + 1 : 101);
+    const d = this.state.doc, number = this.nextNumber();
     const sh = F.cleanSheet({ ...tpl.sheet(), number, view: null }, new Set(d.sheets.map(x => x.id)), number);
     this.setState({ panel: null });
     this.replaceDoc({ ...d, sheets: [...d.sheets, sh], active: sh.id }, `Added the ${tpl.name} template`);
+  }
+  // A Mermaid flowchart or class diagram fills an empty sheet, or else becomes a new sheet.
+  // Returns false when the text is not Mermaid.
+  importMermaid(text) {
+    const r = mermaidSheet(text, { L: this.letter(), caps: this.state.doc.settings.caps, route: this.defRoute(), id: F.uid });
+    if (!r) return false;
+    if (r.error) { this.flash(r.error, 4000); return true; }
+    const d = this.state.doc, cur = this.sheet(), number = cur.nodes.length ? this.nextNumber() : cur.number;
+    const sh = F.cleanSheet({ ...r, number, view: null }, new Set(d.sheets.filter(s => s.id !== cur.id).map(x => x.id)), number);
+    const skipped = r.skipped ? ` Ferroprint skipped ${r.skipped} ${r.skipped === 1 ? 'line' : 'lines'} that it cannot read.` : '';
+    this.setState({ panel: null });
+    if (!cur.nodes.length) {
+      this.pushHistory();
+      this.updSheet(s => ({ nodes: sh.nodes, edges: sh.edges, view: null, name: s.name === 'Untitled sheet' ? sh.name : s.name }));
+      this.flash(`Drew the Mermaid diagram on this sheet.${skipped}`, skipped ? 6000 : 3000);
+    } else this.replaceDoc({ ...d, sheets: [...d.sheets, sh], active: sh.id }, `Added a sheet from Mermaid.${skipped}`);
+    return true;
   }
   async openShare() {
     this.setState({ panel: 'share', share: { url: null } });
@@ -286,6 +306,7 @@ export const Project = Base => class extends Base {
     r.onload = () => {
       let data = null;
       try { data = JSON.parse(r.result); } catch { data = null; }
+      if (!data && this.importMermaid(r.result)) return;
       const doc = F.cleanDoc(data);
       if (doc) {
         doc.sheets = doc.sheets.map(s => ({ ...s, view: null }));
@@ -299,7 +320,7 @@ export const Project = Base => class extends Base {
         this.replaceDoc({ ...d, sheets: [...d.sheets, sh], active: sh.id }, 'Added ' + f.name + ' as a new sheet');
         return;
       }
-      this.flash('Could not read that file. Choose a Ferroprint JSON file.', 4000);
+      this.flash('Could not read that file. Choose a Ferroprint JSON file or a Mermaid file.', 4000);
     };
     r.onerror = () => this.flash('Could not read that file.', 4000);
     r.readAsText(f);
