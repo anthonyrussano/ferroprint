@@ -539,7 +539,7 @@ export function UmlIcon({ kind, size = 40 }) {
   if (kind === 'package') {
     return <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true"><path d="M4 12 V35 H36 V12 H18 V6 H4 Z M4 12 H18" {...st} /></svg>;
   }
-  const tag = { abstract: '«A»', interface: '«I»', enum: '«E»' }[kind], head = tag ? 15 : 12, enumK = kind === 'enum';
+  const tag = { abstract: '«A»', interface: '«I»', enum: '«E»' }[kind], head = tag ? 15 : 12, enumK = kind === 'enum' || kind === 'entity';
   return (
     <svg width={size} height={size} viewBox="0 0 40 40" aria-hidden="true">
       <rect x="6" y="4" width="28" height="32" {...st} />

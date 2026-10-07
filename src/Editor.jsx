@@ -53,7 +53,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash', 'onCopy', 'onCut', 'onPaste', 'onDragOver', 'onDrop', 'onImageFile'].forEach(k => { this[k] = this[k].bind(this); });
     // Stable handlers let the library panel skip renders while the pointer moves.
     this.lib = { pick: id => this.pickSymbol(id), pin: id => this.togglePin(id), drag: (id, e) => this.startPlace(id, e), close: () => this.setState({ panel: null }) };
-    this.tpl = { add: id => this.addTemplate(id), mermaid: text => this.importMermaid(text).then(ok => ok || this.flash('This is not a Mermaid flowchart or class diagram.', 4000)), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
+    this.tpl = { add: id => this.addTemplate(id), mermaid: text => this.importMermaid(text).then(ok => ok || this.flash('Ferroprint reads Mermaid flowcharts, and class, state, entity relationship and sequence diagrams. This text is not one of them.', 5000)), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
     this.shareUI = { copied: ok => this.flash(ok ? 'Link copied. Anyone with the link can open this project.' : 'Copy the selected link with Ctrl C.', 4000), close: () => this.setState({ panel: null, share: null }) };
     this.inUI = { add: () => this.acceptShared('add'), open: () => this.acceptShared('new'), cancel: () => this.acceptShared('cancel') };
     this.projUI = {

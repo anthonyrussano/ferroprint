@@ -415,6 +415,8 @@ export const UML = {
   abstract: { name: 'Abstract class', label: 'Shape', attrs: '# name: String', ops: '+ area(): Double' },
   interface: { name: 'Interface', label: 'Repository', attrs: '', ops: '+ find(id: UUID): T\n+ save(item: T): void' },
   enum: { name: 'Enum', label: 'Status', attrs: 'PENDING\nPAID\nSHIPPED', ops: '' },
+  // An entity of an entity relationship diagram: a name and its attributes, without operations.
+  entity: { name: 'Entity', label: 'Customer', attrs: 'id: uuid PK\nemail: string UK\nname: string', ops: '' },
   package: { name: 'Package', label: 'domain', pkg: true }
 };
 export const STEREOTYPE = { abstract: '«abstract»', interface: '«interface»', enum: '«enumeration»' };
@@ -433,7 +435,7 @@ const lines = t => (t ? String(t).split('\n') : []);
 export function classLayout(n, L, caps) {
   const k = SIZES[n.size || 'm'] / 16, nameFs = 16 * k, memFs = 12 * k, stFs = 11 * k, lh = 16 * k, pad = 8 * k;
   const st = STEREOTYPE[n.kind], name = caps ? String(n.label || '').toUpperCase() : String(n.label || '');
-  const a = lines(n.attrs), o = lines(n.ops), hideOps = n.kind === 'enum' && !o.length;
+  const a = lines(n.attrs), o = lines(n.ops), hideOps = (n.kind === 'enum' || n.kind === 'entity') && !o.length;
   const head = pad + (st ? stFs * 1.3 : 0) + nameFs * 1.25 + pad * 0.75;
   const attrsH = Math.max(a.length * lh, 6 * k) + pad * 1.5;
   const opsH = hideOps ? 0 : Math.max(o.length * lh, 6 * k) + pad * 1.5;

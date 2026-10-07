@@ -358,8 +358,8 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
         {n.type === 'class' && (
           <section>
             <div className="caption">KIND</div>
-            <div className="seg" role="group" aria-label="KIND">
-              {[['class', 'Class'], ['abstract', 'Abstract'], ['interface', 'Interface'], ['enum', 'Enum']].map(([v, l]) => (
+            <div className="seg wrap" role="group" aria-label="KIND">
+              {[['class', 'Class'], ['abstract', 'Abstract'], ['interface', 'Interface'], ['enum', 'Enum'], ['entity', 'Entity']].map(([v, l]) => (
                 <button type="button" key={v} className={cx(n.kind === v && 'on')} aria-pressed={n.kind === v} onClick={() => set({ kind: v })}>{l}</button>
               ))}
             </div>
@@ -580,7 +580,7 @@ export const NewPanel = memo(function NewPanel({ theme, letter, caps, grid, on }
           <button type="button" className="act" onClick={on.blankDoc}>BLANK PROJECT</button>
         </div>
         <p className="hint tight">A blank sheet joins this project. A blank project starts a new project, and this project stays in PROJECTS.</p>
-        <div className="caption">FROM MERMAID · A FLOWCHART OR A CLASS DIAGRAM</div>
+        <div className="caption">FROM MERMAID · FLOWCHART, CLASS, STATE, ER OR SEQUENCE DIAGRAM</div>
         <textarea className="code" rows={4} value={mermaid} placeholder={MERMAID_SAMPLE} spellCheck={false} aria-label="Mermaid text" onChange={e => setMermaid(e.target.value)} />
         <button type="button" className="act" disabled={!mermaid.trim()} onClick={() => on.mermaid(mermaid)}>DRAW THE MERMAID DIAGRAM</button>
         <p className="hint tight">The diagram fills this sheet when the sheet is empty, or else it goes on a new sheet. You can also paste Mermaid text on the sheet, or open a .mmd or Markdown file.</p>

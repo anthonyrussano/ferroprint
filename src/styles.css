@@ -408,6 +408,9 @@ textarea:focus-visible {
 }
 .seg button:hover { box-shadow: inset 0 0 0 1px var(--ink); }
 .seg button.on { background: var(--ink); color: var(--paper); }
+/* A segmented control with more options than fit on one line wraps onto a second line. */
+.seg.wrap { flex-wrap: wrap; }
+.seg.wrap button { flex: 1 0 30%; }
 .from-to {
   padding-bottom: 2px;
   font-family: var(--mono);

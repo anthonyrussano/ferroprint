@@ -263,7 +263,7 @@ export const Project = Base => class extends Base {
     this.setState({ panel: null });
     this.replaceDoc({ ...d, sheets: [...d.sheets, sh], active: sh.id }, `Added the ${tpl.name} template`);
   }
-  // A Mermaid flowchart or class diagram fills an empty sheet, or else becomes a new sheet. Resolves to false
+  // A Mermaid diagram fills an empty sheet, or else becomes a new sheet. Resolves to false
   // when the text is not Mermaid. With `quiet`, Mermaid text without shapes also resolves to false.
   async importMermaid(text, quiet = false) {
     let r;

@@ -53,12 +53,13 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
   const dagre = await loadDagre();
   const frame = FRAMES[dir] || FRAMES.TB, side = dir === 'LR' || dir === 'RL';
   const byId = new Map(nodes.map(n => [n.id, n])), groupById = new Map(groups.map(g => [g.id, g]));
-  // A connector to a group is laid out as a connector to the first shape in the group.
-  const firstIn = new Map();
+  // A connector into a group is laid out as a connector to the first shape in the group, and a connector out of
+  // a group as one from its last shape. So a group sits between the shapes before it and after it.
+  const firstIn = new Map(), lastIn = new Map();
   nodes.forEach(n => {
-    for (let gr = groupById.get(n.group); gr; gr = groupById.get(gr.parent)) if (!firstIn.has(gr.id)) firstIn.set(gr.id, n.id);
+    for (let gr = groupById.get(n.group); gr; gr = groupById.get(gr.parent)) { if (!firstIn.has(gr.id)) firstIn.set(gr.id, n.id); lastIn.set(gr.id, n.id); }
   });
-  const stand = id => (byId.has(id) ? id : firstIn.get(id) || null);
+  const stand = (id, out) => (byId.has(id) ? id : (out ? lastIn : firstIn).get(id) || null);
 
   const layout = rs => {
     const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
@@ -71,7 +72,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
     // dagre puts the targets of one shape right to left in the order of their connectors. Mermaid shows them
     // left to right, so the connectors go in last first.
     [...edges].reverse().forEach(e => {
-      const v = stand(e.from), w = stand(e.to);
+      const v = stand(e.from, true), w = stand(e.to, false);
       if (!v || !w || v === w) return;
       const minlen = e.minlen || 1;
       g.setEdge(v, w, e.label ? { width: e.label.w, height: e.label.h, labelpos: 'c', minlen } : { minlen }, e.id);
@@ -161,7 +162,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       if (!e.label || !d || d.x == null) return;
       const p = frame.to({ x: d.x, y: d.y }), hw = (side ? e.label.h : e.label.w) / 2, hh = (side ? e.label.w : e.label.h) / 2;
       raw.push([p.y - hh, p.y + hh]);
-      labels.push({ id: null, left: p.x - hw, right: p.x + hw, top: p.y - hh, bottom: p.y + hh });
+      labels.push({ id: `label:${e.id}`, left: p.x - hw, right: p.x + hw, top: p.y - hh, bottom: p.y + hh });
     });
     zones.forEach((z, id) => {
       const a = frame.to({ x: z.x, y: z.y }), b = frame.to({ x: z.x + z.w, y: z.y + z.h });
@@ -223,14 +224,16 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       const xs = inner.length ? inner.map(p => p.x) : [(S.cx + T.cx) / 2];
       const pref = xs.reduce((t, x) => t + x, 0) / xs.length >= (inner.length ? (S.cx + T.cx) / 2 : midX) ? 'right' : 'left';
       const other = pref === 'right' ? 'left' : 'right';
-      const lo = Math.min(S.top, T.top), hi = Math.max(S.bottom, T.bottom), span = things.filter(o => o.bottom > lo && o.top < hi);
+      const lo = Math.min(S.top, T.top), hi = Math.max(S.bottom, T.bottom), span = things.filter(o => o.bottom > lo && o.top < hi && o.id !== `label:${e.id}`);
       const port = (b, k) => (k === 'right' ? b.right : b.left);
       const tight = k => (k === 'right' ? Math.max(S.right, T.right) + SIDE_CLEAR : Math.min(S.left, T.left) - SIDE_CLEAR);
       const outer = k => (k === 'right' ? Math.max(...span.map(o => o.right)) + SIDE_CLEAR : Math.min(...span.map(o => o.left)) - SIDE_CLEAR);
       const straight = (k, x) => [{ x: port(S, k), y: S.cy }, { x, y: S.cy }, { x, y: T.cy }, { x: port(T, k), y: T.cy }];
+      // The connector does not keep clear of its own label: the label moves onto the channel.
+      const own = [S.id, T.id, `label:${e.id}`];
       for (const [k, x] of [[pref, tight(pref)], [other, tight(other)], [pref, outer(pref)], [other, outer(other)]]) {
         const path = straight(k, round(x));
-        if (clear(path, [S.id, T.id])) return { e, S, T, label, back: true, sides: [k, k], pts: path };
+        if (clear(path, own)) return { e, S, T, label: label && { x: path[1].x, y: (S.cy + T.cy) / 2 }, back: true, sides: [k, k], pts: path };
       }
       const k = pref, step = k === 'right' ? SIDE_CLEAR : -SIDE_CLEAR;
       return { e, S, T, label, back: true, sides: [k, k], pts: [{ x: port(S, k), y: S.cy }, { x: port(S, k) + step, y: S.cy }, ...inner, { x: port(T, k) + step, y: T.cy }, { x: port(T, k), y: T.cy }] };

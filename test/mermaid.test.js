@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parseMermaid, mermaidSheet, isMermaid } from '../src/mermaid.js';
 import { layoutDiagram } from '../src/layout.js';
-import { LETTER, cleanSheet, inter, edgeGeom } from '../src/engine.js';
+import { LETTER, cleanSheet, inter, edgeGeom, classLayout } from '../src/engine.js';
 
 const L = LETTER.technical;
 const edgesOf = g => g.edges.map(e => `${e.from}>${e.to}${e.label ? ':' + e.label : ''}${e.dashed ? ' dashed' : ''} ${e.arrow}`);
@@ -12,7 +12,10 @@ describe('isMermaid', () => {
     expect(isMermaid('%% a comment\ngraph TD; A-->B')).toBe(true);
     expect(isMermaid('---\ntitle: Shop\n---\nclassDiagram\n  class A')).toBe(true);
     expect(isMermaid('Hello world')).toBe(false);
-    expect(isMermaid('sequenceDiagram\n A->>B: hi')).toBe(false);
+    expect(isMermaid('sequenceDiagram\n A->>B: hi')).toBe(true);
+    expect(isMermaid('stateDiagram-v2\n [*] --> A')).toBe(true);
+    expect(isMermaid('erDiagram\n A ||--o{ B : has')).toBe(true);
+    expect(isMermaid('gantt\n title Plan')).toBe(false);
   });
 });
 
@@ -271,5 +274,106 @@ describe('more Mermaid syntax', () => {
     const [a, b] = sh.edges;
     expect(a.fromSide).toBe(b.fromSide);
     expect(a.fromAt).not.toBe(b.fromAt);
+  });
+});
+
+describe('state diagrams', () => {
+  const src = `stateDiagram-v2
+    [*] --> Idle
+    Idle --> Processing : submit
+    Processing --> Done : success
+    Done --> [*]
+    state Processing {
+        [*] --> Validating
+        Validating --> [*]
+    }
+    state check <<choice>>
+    Idle --> check
+    note right of Done : All good
+    Idle : Waiting for input`;
+
+  it('reads states, starts and ends, choices, notes and composite states', () => {
+    const g = parseMermaid(src);
+    expect(g.kind).toBe('state');
+    expect(g.nodes.get('Idle')).toMatchObject({ shape: 'state', sub: 'Waiting for input' });
+    expect(g.nodes.get('check').shape).toBe('choice');
+    expect([...g.nodes.values()].filter(n => n.shape === 'start').length).toBe(2);
+    expect(g.groups.map(x => x.id)).toEqual(['Processing']);
+    expect(g.nodes.has('Processing')).toBe(false);
+    expect(g.nodes.get('Validating').groups).toEqual(['Processing']);
+    expect(g.edges.some(e => e.to === 'Processing' && e.label === 'submit')).toBe(true);
+  });
+
+  it('makes a sheet with a zone for the composite state', async () => {
+    const sh = await mermaidSheet(src, { L });
+    expect(sh.name).toBe('State diagram');
+    const zone = sh.nodes.find(n => n.type === 'zone');
+    expect(zone.label).toBe('Processing');
+    expect(sh.nodes.filter(n => n.type === 'onpage').length).toBe(4);
+    expect(sh.edges.some(e => e.to === zone.id)).toBe(true);
+  });
+});
+
+describe('entity relationship diagrams', () => {
+  const src = `erDiagram
+    CUSTOMER ||--o{ ORDER : places
+    CUSTOMER }|..|{ DELIVERY-ADDRESS : "uses"
+    CUSTOMER only one to zero or more INVOICE : gets
+    CUSTOMER {
+        string custNumber PK "the number"
+        string name
+        int region FK, UK
+    }`;
+
+  it('reads entities, attributes and cardinalities', () => {
+    const g = parseMermaid(src);
+    expect(g.nodes.get('CUSTOMER').attrs).toEqual(['custNumber: string PK', 'name: string', 'region: int FK, UK']);
+    expect(g.edges.map(e => `${e.from}>${e.to} ${e.m1}:${e.m2}${e.dashed ? ' dashed' : ''} ${e.label}`)).toEqual([
+      'CUSTOMER>ORDER 1:0..* places', 'CUSTOMER>DELIVERY-ADDRESS 1..*:1..* dashed uses', 'CUSTOMER>INVOICE 1:0..* gets'
+    ]);
+  });
+
+  it('draws entities as boxes without an operations compartment', async () => {
+    const sh = await mermaidSheet(src, { L });
+    const c = sh.nodes.find(n => n.label === 'CUSTOMER');
+    expect(c).toMatchObject({ type: 'class', kind: 'entity' });
+    const lay = classLayout(c, L, true);
+    expect(lay.hideOps).toBe(true);
+  });
+});
+
+describe('sequence diagrams', () => {
+  const src = `sequenceDiagram
+    autonumber
+    actor U as User
+    participant A as API
+    U->>+A: Ask
+    A-->>-U: Answer
+    loop Every minute
+      U->>U: Think
+    end
+    Note over U,A: Done
+    A-xU: Gone`;
+
+  it('reads participants, messages, activations, blocks and notes', () => {
+    const g = parseMermaid(src);
+    expect([...g.parts.values()].map(p => `${p.id}:${p.label}:${p.actor}`)).toEqual(['U:User:true', 'A:API:false']);
+    expect(g.events.filter(e => e.type === 'message').map(e => `${e.from}${e.arrow}${e.act}${e.to}`)).toEqual(['U->>+A', 'A-->>-U', 'U->>U', 'A-xU']);
+    expect(g.events.map(e => e.type)).toEqual(['message', 'message', 'open', 'message', 'close', 'note', 'message']);
+  });
+
+  it('draws lifelines, messages, an activation bar, a block and a note', async () => {
+    const sh = await mermaidSheet(src, { L });
+    expect(sh.name).toBe('Sequence diagram');
+    const by = type => sh.nodes.filter(n => n.type === type);
+    expect(by('actor').length).toBe(1);
+    expect(by('zone').map(z => z.label)).toEqual(['loop']);
+    expect(by('note').length).toBe(1);
+    expect(by('box').some(b => b.w === 12)).toBe(true);
+    expect(by('text').map(t => t.label)).toEqual(['1. Ask', '2. Answer', '3. Think', '4. Gone']);
+    const lifelines = by('line').filter(l => l.dashed && l.w === 0);
+    expect(lifelines.length).toBe(2);
+    // Each participant moves with its lifeline.
+    expect(new Set(lifelines.map(l => l.group)).size).toBe(2);
   });
 });
