@@ -353,7 +353,9 @@ export const Pointer = Base => class extends Base {
         // A drop on a port fixes the side. A drop elsewhere on the shape lets the router choose the side.
         const side = this.portAt(target, p), [key, sideKey] = d.end ? ['to', 'toSide'] : ['from', 'fromSide'];
         this.pushHistory();
-        this.setEdges(es => es.map(x => (x.id === d.id ? (side ? { ...x, [key]: target, [sideKey]: side } : without({ ...x, [key]: target }, sideKey)) : x)));
+        // The moved end starts at the middle of its side.
+        const at = d.end ? 'toAt' : 'fromAt';
+        this.setEdges(es => es.map(x => (x.id === d.id ? (side ? without({ ...x, [key]: target, [sideKey]: side }, at) : without(without({ ...x, [key]: target }, sideKey), at)) : x)));
       }
       st.temp = null;
     } else if (d.type === 'move') st.guides = [];

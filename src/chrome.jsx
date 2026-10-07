@@ -496,6 +496,7 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
         nodes.some(n => TURN[n.type]) && ['FLIP', act.flip, { title: 'Mirror the doors and furniture (⇧H)' }],
         nodes.length > 0 && ['WRAP IN ZONE', act.wrap, { title: `Draw a zone around the shapes (${ALT}${MOD}G)` }],
         nodes.length > 0 && ['DUPLICATE', act.dup],
+        edges.some(e => e.pts) && ['STRAIGHTEN', act.straightenAll, { title: 'Remove the bends of the selected connectors, so each one routes itself again' }],
         ['COPY AS PNG', act.copyImage, { title: 'Copy the selection to the clipboard as a picture (⇧C)' }],
         ['DELETE', act.del, { danger: true }]
       ]} />

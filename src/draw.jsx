@@ -254,8 +254,8 @@ export function renderEdge(e, map, ctx, selected, geo = edgeGeom(e, map, ctx.obs
   if (e.label) {
     const fs = 13, str = txt(ctx, e.label), tw = measure(str, `${L.weight} ${fs}px ${L.family}`) + str.length * L.ls * fs + 12;
     label = [
-      <rect key="lb" x={geo.mid.x - tw / 2} y={geo.mid.y - 11} width={tw} height={22} fill={t.paper} />,
-      <text key="lt" x={geo.mid.x} y={geo.mid.y} textAnchor="middle" dominantBaseline="central" fill={c} fontFamily={L.family} fontWeight={L.weight} fontSize={fs} letterSpacing={L.ls * fs} pointerEvents="none">{str}</text>
+      <rect key="lb" x={geo.lp.x - tw / 2} y={geo.lp.y - 11} width={tw} height={22} fill={t.paper} />,
+      <text key="lt" x={geo.lp.x} y={geo.lp.y} textAnchor="middle" dominantBaseline="central" fill={c} fontFamily={L.family} fontWeight={L.weight} fontSize={fs} letterSpacing={L.ls * fs} pointerEvents="none">{str}</text>
     ];
   }
   return (

@@ -106,11 +106,36 @@ export const trunc = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 export const today = () => new Date().toISOString().slice(0, 10);
 
 // ---------- geometry
-export function sidePt(b, s) {
-  if (s === 'left') return { x: b.x, y: b.y + b.h / 2 };
-  if (s === 'right') return { x: b.x + b.w, y: b.y + b.h / 2 };
-  if (s === 'top') return { x: b.x + b.w / 2, y: b.y };
-  return { x: b.x + b.w / 2, y: b.y + b.h };
+// The point on side s of box b, at share `at` along the side. 0.5 is the middle.
+export function sidePt(b, s, at = 0.5) {
+  if (s === 'left') return { x: b.x, y: b.y + b.h * at };
+  if (s === 'right') return { x: b.x + b.w, y: b.y + b.h * at };
+  if (s === 'top') return { x: b.x + b.w * at, y: b.y };
+  return { x: b.x + b.w * at, y: b.y + b.h };
+}
+// Shapes with straight sides, where a connector can meet a side away from its middle. A stadium has round ends.
+const SLIDE = { box: 1, class: 1, note: 1, subproc: 1, text: 1, window: 1, button: 1, input: 1, image: 1, room: 1, zone: 1, service: 1, terminal: 'tb' };
+// The share along side s where a connector meets shape n. A share keeps clear of round corners.
+export function portShare(n, s, at) {
+  const ok = SLIDE[n.type], across = s === 'top' || s === 'bottom';
+  if (typeof at !== 'number' || !ok || (ok === 'tb' && !across)) return 0.5;
+  const len = across ? n.w : n.h, r = n.type === 'terminal' ? n.h / 2 : n.type === 'service' ? Math.min(12, n.h / 2) : 0;
+  const m = Math.min(0.5, (r + 8) / Math.max(1, len));
+  return clamp(at, m, 1 - m);
+}
+// The point where a connector meets side s of shape n. Some symbols have a slanted or curved side, so the
+// point moves onto their outline.
+export function portPoint(n, s, at) {
+  const share = portShare(n, s, at), p = sidePt(n, s, share), w = n.w, h = n.h;
+  if (n.type === 'fdoc' && s === 'bottom') return { x: p.x, y: n.y + h * 0.83 };
+  if (n.type === 'manual' && s === 'top') return { x: p.x, y: n.y + h * 0.15 };
+  if (n.type === 'data' || n.type === 'manualop') {
+    const k = Math.min(w * (n.type === 'data' ? 0.2 : 0.15), h * 0.5) / 2;
+    if (s === 'left') return { x: n.x + k, y: p.y };
+    if (s === 'right') return { x: n.x + w - k, y: p.y };
+  }
+  if (n.type === 'store' && s === 'right') return { x: n.x + w - Math.min(w * 0.12, h * 0.25), y: p.y };
+  return p;
 }
 export function autoSides(a, b) {
   const gx = Math.max(b.x - (a.x + a.w), a.x - (b.x + b.w));
@@ -258,19 +283,19 @@ function autoGeom(e, a, b, route) {
   if (route === 'straight') {
     const ac = centerOf(a), bc = centerOf(b);
     const p1 = clipBox(ac, bc, a), p2 = clipBox(bc, ac, b), mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-    return { d: `M${p1.x} ${p1.y} L${p2.x} ${p2.y}`, p1, p2, mid, endDir: unit(p1, p2), startDir: unit(p2, p1), handles: [{ ...mid, i: 0 }] };
+    return { d: `M${p1.x} ${p1.y} L${p2.x} ${p2.y}`, p1, p2, mid, endDir: unit(p1, p2), startDir: unit(p2, p1), handles: [{ ...mid, i: 0 }], poly: [p1, p2] };
   }
-  const [s1, s2] = autoSides(a, b), p1 = sidePt(a, s1), p2 = sidePt(b, s2);
+  const [s1, s2] = autoSides(a, b), p1 = portPoint(a, s1), p2 = portPoint(b, s2);
   if (route === 'curve') {
     const n1 = NORM[s1], n2 = NORM[s2], kk = Math.max(30, Math.hypot(p2.x - p1.x, p2.y - p1.y) * 0.45);
     const c1 = along(p1, n1, kk), c2 = along(p2, n2, kk), mid = bez(p1, c1, c2, p2, 0.5);
-    return { d: `M${p1.x} ${p1.y} C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`, p1, p2, mid, endDir: unit(c2, p2), startDir: unit(c1, p1), handles: [{ ...mid, i: 0 }] };
+    return { d: `M${p1.x} ${p1.y} C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${p2.x} ${p2.y}`, p1, p2, mid, endDir: unit(c2, p2), startDir: unit(c1, p1), handles: [{ ...mid, i: 0 }], poly: Array.from({ length: 17 }, (_, k) => bez(p1, c1, c2, p2, k / 16)) };
   }
   let pts;
   if (s1 === 'left' || s1 === 'right') { const mx = Math.round((p1.x + p2.x) / 2); pts = [p1, { x: mx, y: p1.y }, { x: mx, y: p2.y }, p2]; }
   else { const my = Math.round((p1.y + p2.y) / 2); pts = [p1, { x: p1.x, y: my }, { x: p2.x, y: my }, p2]; }
   const mid = { x: (pts[1].x + pts[2].x) / 2, y: (pts[1].y + pts[2].y) / 2 };
-  return { d: 'M' + pts.map(q => `${q.x} ${q.y}`).join(' L'), p1, p2, mid, endDir: { x: -NORM[s2].x, y: -NORM[s2].y }, startDir: { x: -NORM[s1].x, y: -NORM[s1].y }, handles: [{ ...mid, i: 0 }], pts };
+  return { d: 'M' + pts.map(q => `${q.x} ${q.y}`).join(' L'), p1, p2, mid, endDir: { x: -NORM[s2].x, y: -NORM[s2].y }, startDir: { x: -NORM[s1].x, y: -NORM[s1].y }, handles: [{ ...mid, i: 0 }], pts, poly: pts };
 }
 
 // Connector geometry. `handles` are the points where a drag adds a bend: index i inserts before bend i.
@@ -279,9 +304,10 @@ function autoGeom(e, a, b, route) {
 export function edgeGeom(e, map, obstacles) {
   const a = map[e.from], b = map[e.to];
   if (!a || !b) return null;
-  const geo = baseGeom(e, a, b);
-  if ((e.route || 'elbow') !== 'elbow' || (e.pts && e.pts.length) || !obstacles || !obstacles.length || !geo.pts) return geo;
-  return avoid(geo, a, b, fixedSide(e.fromSide), fixedSide(e.toSide), obstacles) || geo;
+  let geo = baseGeom(e, a, b);
+  if ((e.route || 'elbow') === 'elbow' && !(e.pts && e.pts.length) && obstacles && obstacles.length && geo.pts) geo = avoid(geo, a, b, e, obstacles) || geo;
+  // `lp` is the place of the label. `lt` on the connector moves it along the path, as a share of the length.
+  return { ...geo, lp: typeof e.lt === 'number' && geo.poly ? pointAt(geo.poly, e.lt) : geo.mid };
 }
 // The boxes that elbow connectors go around: every shape except zones, lines and freehand strokes.
 export const obstaclesOf = nodes => nodes.filter(n => n.type !== 'zone' && n.type !== 'path' && n.type !== 'line').map(n => ({ id: n.id, ...hitBox(n) }));
@@ -290,16 +316,18 @@ const ALL_SIDES = ['top', 'right', 'bottom', 'left'];
 // A small cache keeps those routes, so the router runs only for connectors near the shape that moves.
 const ROUTE_CACHE = new Map(), ROUTE_CACHE_MAX = 500;
 const boxKey = b => `${b.x},${b.y},${b.w},${b.h}`;
-function cachedRoute(a, b, sa, sb, use) {
-  const key = [boxKey(a), boxKey(b), sa.join(), sb.join(), ...use.map(boxKey)].join('|');
+function cachedRoute(a, b, sa, sb, use, e) {
+  const fa = sa.length === 1 ? e.fromAt : undefined, ta = sb.length === 1 ? e.toAt : undefined;
+  const key = [boxKey(a), boxKey(b), a.type, b.type, sa.join(), sb.join(), fa, ta, ...use.map(boxKey)].join('|');
   if (ROUTE_CACHE.has(key)) { const hit = ROUTE_CACHE.get(key); ROUTE_CACHE.delete(key); ROUTE_CACHE.set(key, hit); return hit; }
-  const r = findRoute(a, b, sa, sb, use);
+  const r = findRoute(a, b, sa, sb, use, s => portPoint(a, s, fa), s => portPoint(b, s, ta));
   ROUTE_CACHE.set(key, r);
   if (ROUTE_CACHE.size > ROUTE_CACHE_MAX) ROUTE_CACHE.delete(ROUTE_CACHE.keys().next().value);
   return r;
 }
 const grown = (b, m) => ({ x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m });
-function avoid(geo, a, b, fs, ts, obstacles) {
+function avoid(geo, a, b, e, obstacles) {
+  const fs = fixedSide(e.fromSide), ts = fixedSide(e.toSide);
   // A shape that touches an end, or holds it, such as a window around its buttons, is not in the way.
   const ga = grown(a, MARGIN), gb = grown(b, MARGIN);
   const others = obstacles.filter(o => o.id !== a.id && o.id !== b.id && !inter(o, ga) && !inter(o, gb));
@@ -308,7 +336,7 @@ function avoid(geo, a, b, fs, ts, obstacles) {
   const near = grown(rectFrom({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, { x: Math.max(a.x + a.w, b.x + b.w), y: Math.max(a.y + a.h, b.y + b.h) }), 160);
   let use = others.filter(o => inter(o, near));
   for (let k = 0; k < 4; k++) {
-    const r = cachedRoute(a, b, fs ? [fs] : ALL_SIDES, ts ? [ts] : ALL_SIDES, use);
+    const r = cachedRoute(a, b, fs ? [fs] : ALL_SIDES, ts ? [ts] : ALL_SIDES, use, e);
     if (!r) return null;
     const all = simplify(r.pts), hit = others.filter(o => !use.includes(o) && crosses(all, [o]));
     // A route must never cross a shape that it was given. If it does, the simple route stays.
@@ -317,7 +345,7 @@ function avoid(geo, a, b, fs, ts, obstacles) {
       const handles = [];
       all.slice(1).forEach((q, i) => { if (Math.hypot(q.x - all[i].x, q.y - all[i].y) > 24) handles.push({ x: (q.x + all[i].x) / 2, y: (q.y + all[i].y) / 2, i }); });
       const p1 = all[0], p2 = all[all.length - 1];
-      return { d: polyD(all), p1, p2, mid: pointAt(all, 0.5), endDir: unit(all[all.length - 2], p2), startDir: unit(all[1], p1), handles, pts: all, seed: all.slice(1, -1), sides: r.sides };
+      return { d: polyD(all), p1, p2, mid: pointAt(all, 0.5), endDir: unit(all[all.length - 2], p2), startDir: unit(all[1], p1), handles, pts: all, poly: all, seed: all.slice(1, -1), sides: r.sides };
     }
     use = [...use, ...hit];
   }
@@ -328,14 +356,14 @@ function baseGeom(e, a, b) {
   if (!fs && !ts && !wp.length) return autoGeom(e, a, b, route);
   const ac = centerOf(a), bc = centerOf(b);
   if (route === 'straight') {
-    const p1 = fs ? sidePt(a, fs) : clipBox(ac, wp[0] || (ts ? sidePt(b, ts) : bc), a);
-    const p2 = ts ? sidePt(b, ts) : clipBox(bc, wp[wp.length - 1] || p1, b);
+    const p1 = fs ? portPoint(a, fs, e.fromAt) : clipBox(ac, wp[0] || (ts ? portPoint(b, ts, e.toAt) : bc), a);
+    const p2 = ts ? portPoint(b, ts, e.toAt) : clipBox(bc, wp[wp.length - 1] || p1, b);
     const all = [p1, ...wp, p2], pieces = all.slice(1).map((q, i) => [all[i], q]);
     return finish(pieces, p1, p2, polyD(all), unit(all[all.length - 2], p2), unit(all[1], p1));
   }
-  const s1 = fs || sideToward(a, wp[0] || (ts ? sidePt(b, ts) : bc));
-  const s2 = ts || sideToward(b, wp[wp.length - 1] || sidePt(a, s1));
-  const p1 = sidePt(a, s1), p2 = sidePt(b, s2), n1 = NORM[s1], n2 = NORM[s2];
+  const s1 = fs || sideToward(a, wp[0] || (ts ? portPoint(b, ts, e.toAt) : bc));
+  const s2 = ts || sideToward(b, wp[wp.length - 1] || portPoint(a, s1));
+  const p1 = portPoint(a, s1, fs ? e.fromAt : undefined), p2 = portPoint(b, s2, ts ? e.toAt : undefined), n1 = NORM[s1], n2 = NORM[s2];
   if (route === 'curve') {
     const all = [p1, ...wp, p2], pieces = [];
     let d = `M${f1(p1.x)} ${f1(p1.y)}`, lastC = p1, firstC = null;
@@ -350,8 +378,14 @@ function baseGeom(e, a, b) {
     }
     return finish(pieces, p1, p2, d, unit(lastC, p2), unit(firstC, p1));
   }
-  // Elbow: horizontal and vertical runs through every bend.
-  const a1 = along(p1, n1, STUB), b2 = along(p2, n2, STUB);
+  // Elbow: horizontal and vertical runs through every bend. Ports that face each other closer than two stubs
+  // share the space between them, so the path has no small kink.
+  let stub = STUB;
+  if (!wp.length && n1.x === -n2.x && n1.y === -n2.y) {
+    const gap = n1.x ? n1.x * (p2.x - p1.x) : n1.y * (p2.y - p1.y);
+    if (gap > 0) stub = Math.min(STUB, gap / 2);
+  }
+  const a1 = along(p1, n1, stub), b2 = along(p2, n2, stub);
   let pieces;
   if (!wp.length) pieces = [[p1, a1, ...elbowTurns(a1, n1, b2, n2), b2, p2]];
   else {
@@ -369,7 +403,7 @@ function baseGeom(e, a, b) {
 }
 function finish(pieces, p1, p2, d, endDir, startDir) {
   const all = simplify(pieces.flat());
-  return { d, p1, p2, mid: pointAt(all, 0.5), endDir, startDir, handles: pieces.map((pc, i) => ({ ...pointAt(simplify(pc), 0.5), i })) };
+  return { d, p1, p2, mid: pointAt(all, 0.5), endDir, startDir, handles: pieces.map((pc, i) => ({ ...pointAt(simplify(pc), 0.5), i })), poly: all };
 }
 // Moves the bends of a connector, for example when both of its shapes move.
 export const shiftPts = (pts, dx, dy) => (pts && pts.length ? pts.map(q => ({ x: q.x + dx, y: q.y + dy })) : pts);
@@ -603,6 +637,10 @@ function cleanEdge(e, nodeIds, ids) {
   const pts = Array.isArray(e.pts) ? e.pts.filter(q => q && num(q.x) && num(q.y)).slice(0, 40).map(q => ({ x: q.x, y: q.y })) : [];
   if (pts.length) out.pts = pts;
   if (RELS.includes(e.rel) && e.rel !== 'none') out.rel = e.rel;
+  if (num(e.lt) && e.lt > 0 && e.lt < 1) out.lt = e.lt;
+  // A connector can meet a fixed side away from its middle, as a share along the side.
+  if (out.fromSide && num(e.fromAt) && e.fromAt > 0 && e.fromAt < 1) out.fromAt = e.fromAt;
+  if (out.toSide && num(e.toAt) && e.toAt > 0 && e.toAt < 1) out.toAt = e.toAt;
   const m1 = str(e.m1).slice(0, 24), m2 = str(e.m2).slice(0, 24);
   if (m1) out.m1 = m1;
   if (m2) out.m2 = m2;

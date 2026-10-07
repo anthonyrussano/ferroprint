@@ -11,7 +11,6 @@ const MAX_NODES = 60000;
 // Right, down, left, up.
 const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
 const SIDE_DIR = { right: 0, bottom: 1, left: 2, top: 3 };
-const NORM = { left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, top: { x: 0, y: -1 }, bottom: { x: 0, y: 1 } };
 
 export function sidePoint(b, s) {
   if (s === 'left') return { x: b.x, y: b.y + b.h / 2 };
@@ -72,12 +71,15 @@ const uniq = list => list.slice().sort((a, b) => a - b).filter((v, i, all) => !i
 const firstAtLeast = (list, v) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < v - EPS) lo = m + 1; else hi = m; } return lo; };
 const indexOf = (list, v) => { const i = firstAtLeast(list, v); return i < list.length && Math.abs(list[i] - v) <= EPS ? i : -1; };
 
-// Finds a route from box a to box b. `sidesA` and `sidesB` are the sides that each end can use.
+// Finds a route from box a to box b. `sidesA` and `sidesB` are the sides that each end can use. `portA` and
+// `portB` give the point where a connector meets a side, when it is not the middle of the side.
 // Returns { pts, sides } with the points from the edge of a to the edge of b, or null.
-export function route(a, b, sidesA, sidesB, obstacles) {
+export function route(a, b, sidesA, sidesB, obstacles, portA = s => sidePoint(a, s), portB = s => sidePoint(b, s)) {
   const M = MARGIN, blocks = [...obstacles.map(o => grow(o, M)), grow(a, M), grow(b, M)];
-  const starts = sidesA.map(s => ({ s, p: sidePoint(a, s), q: { x: sidePoint(a, s).x + NORM[s].x * M, y: sidePoint(a, s).y + NORM[s].y * M } }));
-  const ends = sidesB.map(s => ({ s, p: sidePoint(b, s), q: { x: sidePoint(b, s).x + NORM[s].x * M, y: sidePoint(b, s).y + NORM[s].y * M } }));
+  // The first turn of a route is on the grown box, straight out from the port.
+  const out = (bx, s, p) => (s === 'left' ? { x: bx.x - M, y: p.y } : s === 'right' ? { x: bx.x + bx.w + M, y: p.y } : s === 'top' ? { x: p.x, y: bx.y - M } : { x: p.x, y: bx.y + bx.h + M });
+  const starts = sidesA.map(s => { const p = portA(s); return { s, p, q: out(a, s, p) }; });
+  const ends = sidesB.map(s => { const p = portB(s); return { s, p, q: out(b, s, p) }; });
   const xs = uniq([...blocks.flatMap(r => [r.x0, r.x1]), ...starts.map(t => t.q.x), ...ends.map(t => t.q.x), (a.x + a.w + b.x) / 2, (b.x + b.w + a.x) / 2]);
   const ys = uniq([...blocks.flatMap(r => [r.y0, r.y1]), ...starts.map(t => t.q.y), ...ends.map(t => t.q.y), (a.y + a.h + b.y) / 2, (b.y + b.h + a.y) / 2]);
   const nx = xs.length, ny = ys.length, n = nx * ny;

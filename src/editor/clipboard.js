@@ -137,8 +137,8 @@ export const Clipboard = Base => class extends Base {
     }, KEY_FALLBACK_MS);
   }
   // Mermaid text becomes a diagram. Other text becomes a text label.
-  pasteText(text, at) {
-    if (!this.importMermaid(text, true)) this.addText(text, at);
+  async pasteText(text, at) {
+    if (!(await this.importMermaid(text, true))) this.addText(text, at);
   }
 
   // ---------- drops

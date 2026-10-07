@@ -166,9 +166,19 @@ export const Commands = Base => class extends Base {
     this.setEdges(a => a.map(x => {
       if (x.id !== id) return x;
       let y = { ...x, ...patch };
+      // A new side starts at its middle.
+      if ('fromSide' in patch) y = without(y, 'fromAt');
+      if ('toSide' in patch) y = without(y, 'toAt');
       ['fromSide', 'toSide'].forEach(key => { if (y[key] === 'auto') y = without(y, key); });
       return y;
     }));
+  }
+  // Removes the bends of every selected connector, so each one routes itself again.
+  straightenSel() {
+    const ids = new Set(this.state.sel);
+    if (!this.sheet().edges.some(x => ids.has(x.id) && x.pts)) return;
+    this.pushHistory();
+    this.setEdges(a => a.map(x => (ids.has(x.id) && x.pts ? without(x, 'pts') : x)));
   }
   clearBends(id) { this.pushHistory(); this.setEdges(a => a.map(x => (x.id === id ? without(x, 'pts') : x))); }
   rotateSel() { this.turnSelection(F.rotateNode); }

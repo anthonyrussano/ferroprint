@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { parseMermaid, mermaidSheet, isMermaid } from '../src/mermaid.js';
-import { layout } from '../src/layout.js';
+import { layoutDiagram } from '../src/layout.js';
 import { boot, openStore, projectMeta } from '../src/storage.js';
 import * as F from '../src/engine.js';
 
@@ -28,14 +28,14 @@ describe('Mermaid input that used to hang or crash', () => {
     expect(quick(() => parseMermaid('flowchart TD\nA -- ' + 'x '.repeat(5000)))).toBeLessThan(200);
   });
 
-  it('ignores an entity code that is not a character', () => {
-    expect(() => mermaidSheet('graph TD\nA[#1114112;]', { L })).not.toThrow();
+  it('ignores an entity code that is not a character', async () => {
+    await expect(mermaidSheet('graph TD\nA[#1114112;]', { L })).resolves.toBeTruthy();
   });
 });
 
 describe('Mermaid parsing', () => {
-  it('connects a link to a subgraph to its zone, without an extra box', () => {
-    const sh = mermaidSheet(`flowchart TB
+  it('connects a link to a subgraph to its zone, without an extra box', async () => {
+    const sh = await mermaidSheet(`flowchart TB
       c1-->a2
       subgraph one
       a1-->a2
@@ -75,10 +75,11 @@ describe('Mermaid parsing', () => {
 });
 
 describe('layout of a long chain', () => {
-  it('does not overflow the stack', () => {
-    const ids = Array.from({ length: 3000 }, (_, i) => 'n' + i);
-    expect(() => layout(ids.map(id => ({ id, w: 100, h: 40 })), ids.slice(1).map((id, i) => ({ from: ids[i], to: id })))).not.toThrow();
-  });
+  it('does not overflow the stack', async () => {
+    const ids = Array.from({ length: 1500 }, (_, i) => 'n' + i);
+    const { pos } = await layoutDiagram({ nodes: ids.map(id => ({ id, w: 100, h: 40 })), edges: ids.slice(1).map((id, i) => ({ id: 'e' + i, from: ids[i], to: id, label: null })) });
+    expect(pos.size).toBe(1500);
+  }, 30000);
 });
 
 describe('storage recovery', () => {

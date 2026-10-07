@@ -1,13 +1,13 @@
 // Mermaid import. A flowchart or a class diagram becomes a sheet: shapes, connectors, and zones for
-// subgraphs and namespaces. The layered layout in layout.js places the shapes.
-import { layout } from './layout.js';
-import { classLayout, measure, SHAPES, clamp } from './engine.js';
+// subgraphs and namespaces. layout.js places the shapes with dagre, as Mermaid does, and routes the connectors.
+import { layoutDiagram } from './layout.js';
+import { classLayout, measure, wrap } from './engine.js';
 
 // The first line: the diagram type, and for a flowchart an optional direction. Statements can follow a semicolon.
-const HEADER = /^(?:(flowchart|graph)(?:-v2)?(?: (TB|TD|BT|RL|LR|tb|td|bt|rl|lr))?|(classDiagram)(?:-v2)?) ?(?:;|$)/;
+const HEADER = /^(?:(flowchart|graph)(?:-v2|-elk)?(?: (TB|TD|BT|RL|LR|tb|td|bt|rl|lr))?|(classDiagram)(?:-v2)?) ?(?:;|$)/;
 // A longer line is skipped, so a large paste cannot keep the parser busy.
 const MAX_LINE = 4000;
-const SKIP = /^(classDef|class\s+[\w,]+\s+\w+\s*$|style|linkStyle|click|accTitle|accDescr|callback|link|cssClass|note)\b/;
+const SKIP = /^(classDef|class\s+[\w,]+\s+\w+\s*$|style|linkStyle|click|accTitle|accDescr|callback|link|cssClass)\b/;
 
 // Removes the YAML front matter and the comments. Returns the title from the front matter, if any.
 // In Markdown, the first ```mermaid block is the diagram.
@@ -32,13 +32,18 @@ export const isMermaid = text => {
   return lines.length > 0 && HEADER.test(lines[0]);
 };
 
-// Label text: quotes, line breaks, tags, entities and markdown marks go.
+// Label text: quotes, line breaks, tags, entities and icons go. A markdown string, in backticks, also loses its marks.
 function cleanLabel(s) {
-  return String(s).trim().replace(/^"([\s\S]*)"$/, '$1').replace(/^`([\s\S]*)`$/, '$1')
-    .replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+  let t = String(s).trim().replace(/^"([\s\S]*)"$/, '$1');
+  if (/^`[\s\S]*`$/.test(t)) {
+    t = t.slice(1, -1).replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/~~(.+?)~~/g, '$1')
+      .replace(/(^|[^\w*])\*(\S(?:.*?\S)?)\*(?![\w*])/g, '$1$2').replace(/(^|[^\w])_(\S(?:.*?\S)?)_(?!\w)/g, '$1$2');
+  }
+  return t.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+    .replace(/\bfa[bsrl]?:fa-[\w-]+\s*/g, '')
     .replace(/#quot;/g, '"').replace(/#(\d+);/g, (_, n) => (Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : ''))
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').trim();
+    .split('\n').map(l => l.trim()).join('\n').trim();
 }
 
 // Splits a line into statements at semicolons that are outside brackets, quotes and |link labels|.
@@ -59,17 +64,33 @@ function statements(line) {
 // ---------- flowcharts
 // Node shapes: the opening mark, the closing marks, and the Ferroprint shape.
 const SHAPE_MARKS = [
-  ['(((', [')))'], 'terminal'], ['((', ['))'], 'terminal'], ['([', ['])'], 'terminal'], ['[[', [']]'], 'subproc'],
+  ['(((', [')))'], 'onpage'], ['((', ['))'], 'onpage'], ['([', ['])'], 'terminal'], ['[[', [']]'], 'subproc'],
   ['[(', [')]'], 'database'], ['[/', ['/]', '\\]'], 'data'], ['[\\', ['\\]', '/]'], 'data'], ['{{', ['}}'], 'prep'],
   ['>', [']'], 'box'], ['{', ['}'], 'decision'], ['(', [')'], 'service'], ['[', [']'], 'box']
 ];
+// Mermaid 11 shapes: A@{ shape: cyl, label: "Orders" }. Each name and alias, and the Ferroprint shape.
+const V11 = [
+  ['box', 'rect proc process rectangle notch-rect card notched-rectangle hourglass collate bolt com-link lightning-bolt curv-trap curved-trapezoid display div-rect div-proc divided-process divided-rectangle tri extract triangle fork join win-pane internal-storage window-pane notch-pent loop-limit notched-pentagon flip-tri flipped-triangle manual-file st-rect processes procs stacked-rectangle odd flag paper-tape tag-rect tag-proc tagged-process tagged-rectangle lin-rect lin-proc lined-process lined-rectangle shaded-process'],
+  ['service', 'rounded event'], ['terminal', 'stadium pill terminal'], ['onpage', 'circle circ sm-circ small-circle start dbl-circ double-circle fr-circ framed-circle stop f-circ filled-circle junction cross-circ crossed-circle summary'],
+  ['subproc', 'fr-rect framed-rectangle subproc subprocess subroutine'], ['database', 'cyl cylinder database db lin-cyl disk lined-cylinder'],
+  ['queue', 'h-cyl das horizontal-cylinder'], ['decision', 'diam decision diamond question'], ['prep', 'hex hexagon prepare'],
+  ['data', 'lean-r lean-right in-out lean-l lean-left out-in'], ['manualop', 'trap-t inv-trapezoid manual trapezoid-top trap-b priority trapezoid trapezoid-bottom'],
+  ['manual', 'sl-rect manual-input sloped-rectangle'], ['fdoc', 'doc document docs documents st-doc stacked-document lin-doc lined-document tag-doc tagged-document'],
+  ['delay', 'delay half-rounded-rectangle'], ['store', 'bow-rect bow-tie-rectangle stored-data'], ['note', 'brace brace-l comment brace-r braces'], ['text', 'text']
+];
+const V11_SHAPE = Object.fromEntries(V11.flatMap(([kind, names]) => names.split(' ').map(n => [n, kind])));
+const props = body => {
+  const out = {};
+  for (const m of body.matchAll(/(\w+)\s*:\s*(?:"([^"]*)"|'([^']*)'|([^,]+))/g)) out[m[1]] = (m[2] ?? m[3] ?? m[4] ?? '').trim();
+  return out;
+};
 const ID = /^[\wÀ-￿]+(?:[.-][\wÀ-￿]+)*/;
 const TEXT_LINK = /^(<)?(--|==|-\.)\s+([^\s>|=.-][^|]*?)\s+(-{2,}>|-{3,}|={2,}>|={3,}|\.-+>|\.-+)/;
 const LINK = /^(<)?(-{2,}>|={2,}>|-\.+->|-{3,}|={3,}|-\.+-|~{3,}|-{2,}[ox](?![\w])|={2,}[ox](?![\w])|-{2}|={2})/;
 
 function parseFlow(lines, dir) {
   const g = { kind: 'flow', dir, nodes: new Map(), edges: [], groups: [], skipped: 0 };
-  const open = [];
+  const open = [], edgeIds = new Set();
   const mention = id => {
     if (!g.nodes.has(id)) g.nodes.set(id, { id, label: id, shape: 'box', groups: null });
     const n = g.nodes.get(id);
@@ -82,7 +103,15 @@ function parseFlow(lines, dir) {
     if (!m) return null;
     const id = m[0];
     let i = id.length, label = null, shape = null;
-    for (const [mark, ends, kind] of SHAPE_MARKS) {
+    // Mermaid 11 writes the shape and the label in braces after an @.
+    const v11 = rest.startsWith('@{', i) ? rest.indexOf('}', i) : -1;
+    if (v11 > 0) {
+      const p = props(rest.slice(i + 2, v11));
+      if (p.label != null) label = cleanLabel(p.label);
+      shape = V11_SHAPE[String(p.shape || '').toLowerCase()] || null;
+      i = v11 + 1;
+    }
+    for (const [mark, ends, kind] of v11 > 0 ? [] : SHAPE_MARKS) {
       if (!rest.startsWith(mark, i)) continue;
       let from = i + mark.length, end = -1, close = '';
       const quoted = rest[from] === '"';
@@ -100,7 +129,8 @@ function parseFlow(lines, dir) {
     if (cls) i += cls[0].length;
     const n = mention(id);
     // The last definition of a shape wins, as in Mermaid.
-    if (label != null) { n.label = label; n.shape = shape; n.defined = true; }
+    if (label != null) { n.label = label; n.defined = true; }
+    if (shape) { n.shape = shape; n.defined = true; }
     return { n, rest: rest.slice(i) };
   };
   const nodeGroup = rest => {
@@ -117,7 +147,10 @@ function parseFlow(lines, dir) {
     }
   };
   const link = rest => {
-    const r = rest.trimStart();
+    let r = rest.trimStart();
+    // An id before a link, as in A e1@--> B, names the link for styles. The name is not needed here.
+    const named = r.match(/^([\w-]+)@(?=[<\-=.~])/);
+    if (named) { edgeIds.add(named[1]); r = r.slice(named[0].length); }
     let m = r.match(TEXT_LINK), label = '', head, tail, start;
     if (m) { start = m[1]; head = m[2]; tail = m[4]; label = cleanLabel(m[3]); }
     else {
@@ -129,7 +162,12 @@ function parseFlow(lines, dir) {
     const pipe = after.match(/^\s*\|([^|]*)\|/);
     if (pipe) { label = cleanLabel(pipe[1]); after = after.slice(pipe[0].length); }
     const end = /[>ox]$/.test(tail);
+    // A longer link asks for more ranks between its shapes: --> is one rank, ---> is two, and -..-> is two.
+    // The closing part of a link with text sets its length.
+    const token = head === tail ? head : tail, dots = (token.match(/\./g) || []).length, bars = (token.match(/[-=]/g) || []).length;
+    const minlen = Math.max(1, Math.min(6, dots || bars - (end ? 1 : 2)));
     return {
+      minlen,
       rest: after,
       hidden: /^~/.test(head),
       dashed: head.includes('.') || tail.includes('.'),
@@ -153,6 +191,9 @@ function parseFlow(lines, dir) {
     }
     if (st === 'end') { open.pop(); return; }
     if (/^direction\s+\w+$/i.test(st) || SKIP.test(st)) return;
+    // Settings of a named link, such as e1@{ animate: true }.
+    const linkProps = st.match(/^([\w-]+)@\{/);
+    if (linkProps && edgeIds.has(linkProps[1])) return;
     let first = nodeGroup(st);
     if (!first) { g.skipped++; return; }
     let rest = first.rest;
@@ -165,7 +206,7 @@ function parseFlow(lines, dir) {
         first.list.forEach(a => next.list.forEach(b => {
           // A link with its only arrow at the start points the other way.
           const flip = l.arrow === 'start';
-          g.edges.push({ from: flip ? b.id : a.id, to: flip ? a.id : b.id, label: l.label, dashed: l.dashed, arrow: flip ? 'end' : l.arrow });
+          g.edges.push({ from: flip ? b.id : a.id, to: flip ? a.id : b.id, label: l.label, dashed: l.dashed, arrow: flip ? 'end' : l.arrow, minlen: l.minlen });
         }));
       }
       first = next;
@@ -180,7 +221,20 @@ function parseFlow(lines, dir) {
 
 // ---------- class diagrams
 const KINDS = { interface: 'interface', abstract: 'abstract', enumeration: 'enum', enum: 'enum' };
-const generic = s => String(s).replace(/~([^~]*)~/g, '<$1>');
+// Mermaid writes generics with tildes: List~int~ is List<int>, and List~List~int~~ is List<List<int>>.
+// A tilde between two word characters opens a type parameter. Any other tilde closes one.
+function generic(s) {
+  const str = String(s);
+  let out = '', depth = 0;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch !== '~') out += ch;
+    else if (/\w/.test(str[i - 1] || '') && /\w/.test(str[i + 1] || '')) { out += '<'; depth++; }
+    else if (depth > 0) { out += '>'; depth--; }
+    else out += ch;
+  }
+  return out;
+}
 // A relation: left class, cardinality, left mark, line, right mark, cardinality, right class, label.
 const RELATION = /^([\w.]+)\s*(?:"([^"]*)")?\s*(<\||\*|o|<)?(--|\.\.)(\|>|\*|o|>)?\s*(?:"([^"]*)")?\s*([\w.]+)\s*(?::\s*(.*))?$/;
 
@@ -199,7 +253,7 @@ function parseClass(lines) {
     if (note) { c.kind = KINDS[note[1].toLowerCase()] || c.kind; return; }
     if (t) (t.includes('(') ? c.ops : c.attrs).push(t);
   };
-  let body = null;
+  let body = null, notes = 0;
   lines.slice(1).forEach(line => {
     if (body) {
       if (/^}\s*$/.test(line)) { body = null; return; }
@@ -211,7 +265,7 @@ function parseClass(lines) {
     const ns = line.match(/^namespace\s+([\w.]+)\s*\{$/);
     if (ns) { const grp = { id: ns[1], label: ns[1], parent: open.length ? open[open.length - 1].id : null, pkg: true }; g.groups.push(grp); open.push(grp); return; }
     if (/^}$/.test(line) && open.length) { open.pop(); return; }
-    const decl = line.match(/^class\s+([\w.]+)(~[^~]+~)?\s*(?:\["([^"]*)"\])?\s*(?::::[\w-]+)?\s*(\{(.*?)(\})?)?\s*$/);
+    const decl = line.match(/^class\s+([\w.]+)(~[^{[:]*~)?\s*(?:\["([^"]*)"\])?\s*(?::::[\w-]+)?\s*(\{(.*?)(\})?)?\s*$/);
     if (decl) {
       const c = cls(decl[1]);
       if (decl[2]) c.label = generic(decl[1] + decl[2]);
@@ -221,6 +275,14 @@ function parseClass(lines) {
         if (decl[6]) inner.split(';').forEach(m => member(c, m));
         else { if (inner) member(c, inner); body = c; }
       }
+      return;
+    }
+    // A note for a class becomes a note shape with a dashed line to the class. A note without a class stands alone.
+    const note = line.match(/^note(?:\s+for\s+([\w.]+))?\s+"(.*)"$/);
+    if (note) {
+      const id = `note${notes++}`, text = note[2].replace(/\\n/g, '\n');
+      g.nodes.set(id, { id, label: cleanLabel(text), kind: 'note', attrs: [], ops: [], groups: open.length ? open.map(x => x.id) : null });
+      if (note[1]) { cls(note[1]); g.edges.push({ from: id, to: note[1], label: '', rel: null, dashed: true, arrow: 'none', note: true }); }
       return;
     }
     const ann = line.match(/^<<\s*(\w+)\s*>>\s*([\w.]+)$/);
@@ -260,74 +322,126 @@ export function parseMermaid(text) {
   return g;
 }
 
+
 // ---------- sheet
 const GRID = 20;
-const snap = v => Math.round(v / GRID) * GRID;
-const ceilTo = v => Math.ceil(v / GRID) * GRID;
-const PAD = 28;
-const PAD_TOP = 48;
+const up = v => Math.ceil(v / GRID) * GRID;
+// The widest label line before it wraps, in px. A diamond holds its label in its middle, so it wraps sooner.
+const WRAP = 200, WRAP_DIAMOND = 130;
+// The size of each shape around a label of width tw and height th. The numbers follow where draw.jsx and
+// library.jsx put the label in each shape.
+const FIT = {
+  box: (tw, th) => [tw + 40, th + 28, 100, 60],
+  service: (tw, th) => [tw + 44, th + 28, 100, 60],
+  terminal: (tw, th) => [tw + 56, th + 24, 120, 60],
+  subproc: (tw, th) => [tw + 56, th + 28, 120, 60],
+  database: (tw, th) => [tw + 40, th + 64, 100, 100],
+  queue: (tw, th) => [tw + 60, th + 28, 140, 60],
+  decision: (tw, th) => [tw / 0.6 + 24, th * 2 + 36, 120, 80],
+  prep: (tw, th) => [tw + 60, th + 28, 120, 60],
+  data: (tw, th) => [tw + 76, th + 28, 140, 60],
+  manualop: (tw, th) => [tw + 76, th + 28, 140, 60],
+  manual: (tw, th) => [tw + 40, th + 44, 120, 80],
+  fdoc: (tw, th) => [tw + 40, th + 44, 120, 80],
+  delay: (tw, th) => [tw + 56, th + 28, 120, 60],
+  store: (tw, th) => [tw + 48, th + 28, 120, 60],
+  onpage: (tw, th) => { const d = Math.max(tw + 28, th + 28); return [d, d, 60, 60]; },
+  note: (tw, th) => [tw + 44, th + 30, 140, 60],
+  text: (tw, th) => [tw + 20, th + 16, 60, 40]
+};
 
-// The size of a flowchart shape that holds its label. Wide labels wrap at the widest size.
-function flowSize(n, L) {
-  const base = SHAPES[n.shape] || SHAPES.box, font = `${L.weight} 16px ${L.family}`;
-  const lines = n.label.split('\n'), wide = Math.max(...lines.map(l => measure(l, font) + l.length * L.ls * 16));
-  const k = n.shape === 'decision' ? 1.7 : n.shape === 'data' || n.shape === 'manualop' || n.shape === 'prep' ? 1.3 : 1;
-  const w = clamp(ceilTo(wide * k + 48), Math.min(base.w, 160), 300);
-  const rows = lines.reduce((t, l) => t + Math.max(1, Math.ceil((measure(l, font) * k + 20) / (w - 20))), 0);
-  return { w, h: Math.max(base.h, ceilTo(rows * 20 * L.lh * (n.shape === 'decision' ? 1.8 : 1) + 28)) };
+// The size of a flowchart shape that holds its label.
+function shapeSize(kind, label, L, caps) {
+  const font = `${L.weight} 16px ${L.family}`, ls = L.ls * 16, text = caps ? label.toUpperCase() : label;
+  const lines = text ? wrap(text, kind === 'decision' ? WRAP_DIAMOND : WRAP, font, ls) : [''];
+  const tw = Math.max(...lines.map(l => measure(l, font) + l.length * ls)), th = lines.length * 16 * L.lh;
+  const [w, h, minW, minH] = (FIT[kind] || FIT.box)(tw, th);
+  return { w: Math.max(minW, up(w)), h: Math.max(minH, up(h)) };
 }
 
-// Turns Mermaid text into a sheet: { name, nodes, edges, skipped }. Returns null when the text is not Mermaid.
-// `L` and `caps` set the lettering, so class boxes get the size that the editor gives them.
-export function mermaidSheet(text, { L, caps = true, route = 'elbow', id = () => Math.random().toString(36).slice(2, 9) }) {
+// The size of a connector label, so the layout keeps room for it.
+function labelSize(text, L, caps) {
+  if (!text) return null;
+  const str = caps ? text.toUpperCase() : text, font = `${L.weight} 13px ${L.family}`;
+  const lines = str.split('\n');
+  return { w: Math.ceil(Math.max(...lines.map(l => measure(l, font) + l.length * L.ls * 13)) + 16), h: 22 * lines.length };
+}
+
+// Turns Mermaid text into a sheet: { name, unit, nodes, edges, skipped }. Returns null when the text is not
+// Mermaid, and { error } when it has no shapes. `L` and `caps` set the lettering, so each shape gets the size
+// that the editor gives it.
+export async function mermaidSheet(text, { L, caps = true, id = () => Math.random().toString(36).slice(2, 9) }) {
   const g = parseMermaid(text);
-  if (!g || !g.nodes.size) return g ? { error: 'The Mermaid text has no shapes.' } : null;
+  if (!g) return null;
+  if (!g.nodes.size) return { error: 'The Mermaid text has no shapes.' };
   // A group and a shape can have the same name, so each has its own map of ids.
   const ids = new Map([...g.nodes.keys()].map(k => [k, id()])), zoneIds = new Map(g.groups.map(x => [x.id, id()]));
   const nodes = [...g.nodes.values()].map(n => {
     const base = { id: ids.get(n.id), x: 0, y: 0, label: n.label, sub: '', dashed: false, fill: 'none', size: 'm', flip: false };
-    if (g.kind === 'class') {
+    const groups = n.groups || [], group = groups.length ? zoneIds.get(groups[groups.length - 1]) : null;
+    if (g.kind === 'class' && n.kind !== 'note') {
       const c = { ...base, type: 'class', kind: n.kind, attrs: n.attrs.join('\n'), ops: n.ops.join('\n'), w: 200, h: 120 };
       const lay = classLayout(c, L, caps);
-      return { ...c, w: Math.max(200, ceilTo(lay.minW)), h: lay.h, groups: n.groups || [] };
+      return { ...c, w: Math.max(160, up(lay.minW)), h: lay.h, group };
     }
-    return { ...base, type: n.shape, ...flowSize(n, L), groups: n.groups || [] };
+    const kind = g.kind === 'class' ? 'note' : n.shape;
+    return { ...base, type: kind, ...shapeSize(kind, n.label, L, caps), group };
   });
-  // In the layout, a link to a group counts as a link to the first shape of the group.
-  const keys = [...g.nodes.keys()];
-  const stand = k => {
-    if (ids.has(k)) return ids.get(k);
-    const member = keys.find(q => (g.nodes.get(q).groups || []).includes(k));
-    return member ? ids.get(member) : null;
-  };
-  // Inheritance points up to the parent, so for the layout the parent comes first.
-  const up = e => e.rel === 'inherit' || e.rel === 'realize';
-  const place = layout(
-    nodes.map(n => ({ id: n.id, w: n.w, h: n.h, groups: n.groups.map(k => zoneIds.get(k)) })),
-    g.edges.map(e => [stand(e.from), stand(e.to), up(e)]).filter(([a, b]) => a && b && a !== b).map(([a, b, flip]) => (flip ? { from: b, to: a } : { from: a, to: b })),
-    { dir: g.dir, gapX: 60, gapY: 80 + 40 * Math.max(0, ...nodes.map(n => n.groups.length)) }
-  );
-  nodes.forEach(n => { const p = place.get(n.id); n.x = snap(p.x) + 80; n.y = snap(p.y) + 80 + (g.groups.length ? PAD_TOP : 0); });
-  // Zones: the box around the members of each group, inner groups first, so an outer zone holds them.
-  const zones = [], boxOf = new Map();
-  [...g.groups].reverse().forEach(grp => {
-    const kids = [...nodes.filter(n => n.groups[n.groups.length - 1] === grp.id), ...g.groups.filter(x => x.parent === grp.id).map(x => boxOf.get(x.id)).filter(Boolean)];
-    if (!kids.length) return;
-    const x0 = Math.min(...kids.map(k => k.x)) - PAD, y0 = Math.min(...kids.map(k => k.y)) - PAD_TOP;
-    const x1 = Math.max(...kids.map(k => k.x + k.w)) + PAD, y1 = Math.max(...kids.map(k => k.y + k.h)) + PAD;
-    const z = { id: zoneIds.get(grp.id), type: 'zone', x: snap(x0), y: snap(y0), w: ceilTo(x1 - snap(x0)), h: ceilTo(y1 - snap(y0)), label: grp.label, sub: '', dashed: !grp.pkg, fill: 'none', size: 's', flip: false };
-    if (grp.pkg) z.pkg = true;
-    boxOf.set(grp.id, z);
-    zones.unshift(z);
-  });
-  const target = k => ids.get(k) || (boxOf.has(k) ? boxOf.get(k).id : null);
-  const edges = g.edges.filter(e => target(e.from) && target(e.to) && e.from !== e.to).map(e => {
-    const out = { id: id(), from: target(e.from), to: target(e.to), label: e.label || '', route, arrow: e.arrow || 'end', dashed: !!e.dashed };
+  // Where a connector can meet a side away from its middle. It matches portShare in engine.js.
+  const SLIDE = { class: 'all', note: 'all', box: 'all', subproc: 'all', text: 'all', service: 'all', terminal: 'tb' };
+  // The space that a port keeps from a corner. It matches portShare in engine.js.
+  const MARGIN = { terminal: n => n.h / 2 + 8, service: () => 20 };
+  nodes.forEach(n => { n.slide = SLIDE[n.type] || null; n.margin = MARGIN[n.type] ? MARGIN[n.type](n) : 8; });
+  const byKey = new Map([...g.nodes.keys()].map((k, i) => [k, nodes[i]]));
+  const groups = g.groups.map(x => ({ id: zoneIds.get(x.id), parent: x.parent ? zoneIds.get(x.parent) : null, label: x.label, pkg: !!x.pkg }));
+  const ref = k => (byKey.has(k) ? byKey.get(k).id : zoneIds.get(k) || null);
+  const edges = g.edges.map(e => {
+    const out = { id: id(), from: ref(e.from), to: ref(e.to), label: e.label || '', route: 'elbow', arrow: e.arrow || 'end', dashed: !!e.dashed };
+    // Connectors of one kind can share a port. The sheet drops these fields.
+    out.kind = [e.rel || '', e.dashed ? 'dashed' : '', e.arrow || 'end', e.note ? 'note' : ''].join('|');
+    if (e.minlen > 1) out.minlen = e.minlen;
     if (e.rel) out.rel = e.rel;
     if (e.m1) out.m1 = e.m1;
     if (e.m2) out.m2 = e.m2;
     return out;
+  }).filter(e => e.from && e.to && e.from !== e.to);
+  // Inheritance points up to the parent, so for the layout the parent comes first and the connector turns around.
+  const flip = new Set(edges.filter(e => e.rel === 'inherit' || e.rel === 'realize').map(e => e.id));
+  const plan = await layoutDiagram({
+    dir: g.dir,
+    nodes: nodes.map(n => ({ id: n.id, w: n.w, h: n.h, group: n.group, slide: n.slide, margin: n.margin })),
+    groups,
+    edges: edges.map(e => ({
+      id: e.id, from: flip.has(e.id) ? e.to : e.from, to: flip.has(e.id) ? e.from : e.to, label: labelSize(e.label, L, caps),
+      kind: e.kind, minlen: e.minlen
+    }))
   });
+  nodes.forEach(n => { const p = plan.pos.get(n.id); n.x = p.x; n.y = p.y; });
+  edges.forEach(e => {
+    const r = plan.routes.get(e.id);
+    if (!r) return;
+    const turn = flip.has(e.id);
+    e.fromSide = turn ? r.toSide : r.fromSide;
+    e.toSide = turn ? r.fromSide : r.toSide;
+    if (r.pts) e.pts = turn ? [...r.pts].reverse() : r.pts;
+    const fromAt = turn ? r.toAt : r.fromAt, toAt = turn ? r.fromAt : r.toAt;
+    if (fromAt != null) e.fromAt = fromAt;
+    if (toAt != null) e.toAt = toAt;
+    if (r.lt != null) e.lt = turn ? Math.round((1 - r.lt) * 1000) / 1000 : r.lt;
+  });
+  const zones = new Map();
+  groups.forEach(grp => {
+    const box = plan.zones.get(grp.id);
+    if (!box) return;
+    const z = { id: grp.id, type: 'zone', ...box, label: grp.label, sub: '', dashed: !grp.pkg, fill: 'none', size: 's', flip: false };
+    if (grp.pkg) z.pkg = true;
+    zones.set(grp.id, z);
+  });
+  // The drawing starts at (80, 80), on the grid.
+  const all = [...zones.values(), ...nodes];
+  const dx = 80 - Math.floor(Math.min(...all.map(n => n.x)) / GRID) * GRID, dy = 80 - Math.floor(Math.min(...all.map(n => n.y)) / GRID) * GRID;
+  all.forEach(n => { n.x += dx; n.y += dy; });
+  edges.forEach(e => { if (e.pts) e.pts = e.pts.map(p => ({ x: p.x + dx, y: p.y + dy })); });
   const name = g.title || (g.kind === 'class' ? 'Class diagram' : 'Flowchart');
-  return { name, unit: 'px', nodes: [...zones, ...nodes.map(({ groups: _, ...n }) => n)], edges, skipped: g.skipped };
+  return { name, unit: 'px', nodes: [...[...groups].map(x => zones.get(x.id)).filter(Boolean), ...nodes.map(({ group: _g, slide: _s, margin: _m, ...n }) => n)], edges, skipped: g.skipped };
 }

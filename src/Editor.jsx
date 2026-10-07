@@ -53,7 +53,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash', 'onCopy', 'onCut', 'onPaste', 'onDragOver', 'onDrop', 'onImageFile'].forEach(k => { this[k] = this[k].bind(this); });
     // Stable handlers let the library panel skip renders while the pointer moves.
     this.lib = { pick: id => this.pickSymbol(id), pin: id => this.togglePin(id), drag: (id, e) => this.startPlace(id, e), close: () => this.setState({ panel: null }) };
-    this.tpl = { add: id => this.addTemplate(id), mermaid: text => this.importMermaid(text) || this.flash('This is not a Mermaid flowchart or class diagram.', 4000), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
+    this.tpl = { add: id => this.addTemplate(id), mermaid: text => this.importMermaid(text).then(ok => ok || this.flash('This is not a Mermaid flowchart or class diagram.', 4000)), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
     this.shareUI = { copied: ok => this.flash(ok ? 'Link copied. Anyone with the link can open this project.' : 'Copy the selected link with Ctrl C.', 4000), close: () => this.setState({ panel: null, share: null }) };
     this.inUI = { add: () => this.acceptShared('add'), open: () => this.acceptShared('new'), cancel: () => this.acceptShared('cancel') };
     this.projUI = {
@@ -210,7 +210,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
             align: kind => this.align(kind), distribute: axis => this.distribute(axis),
             rotate: () => this.rotateSel(), flip: () => this.flipSel(), reverseLine: () => this.reverseLine(), style: (field, value) => this.styleSel(field, value),
             group: () => this.groupSel(), ungroup: () => this.ungroupSel(), lock: () => this.lockSel(),
-            sides: patch => this.setEdgeSides(st.sel[0], patch), straighten: () => this.clearBends(st.sel[0]),
+            sides: patch => this.setEdgeSides(st.sel[0], patch), straighten: () => this.clearBends(st.sel[0]), straightenAll: () => this.straightenSel(),
             chooseImage: () => { if (this.imageRef.current) this.imageRef.current.click(); },
             removeImage: () => { const id = st.sel[0]; this.pushHistory(); this.setNodes(a => a.map(q => (q.id === id ? without(q, 'file') : q))); },
             copyImage: () => this.copyImage(),
@@ -220,9 +220,12 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
               this.pushHistory();
               this.setEdges(a => a.map(q => {
                 if (q.id !== id) return q;
-                let r = without(without({ ...q, from: q.to, to: q.from }, 'fromSide'), 'toSide');
+                let r = ['fromSide', 'toSide', 'fromAt', 'toAt', 'lt'].reduce((o, k) => without(o, k), { ...q, from: q.to, to: q.from });
                 if (q.toSide) r.fromSide = q.toSide;
                 if (q.fromSide) r.toSide = q.fromSide;
+                if (q.toAt != null) r.fromAt = q.toAt;
+                if (q.fromAt != null) r.toAt = q.fromAt;
+                if (q.lt != null) r.lt = Math.round((1 - q.lt) * 1000) / 1000;
                 if (q.pts) r = { ...r, pts: [...q.pts].reverse() };
                 return r;
               }));

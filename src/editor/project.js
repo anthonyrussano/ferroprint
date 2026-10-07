@@ -263,12 +263,12 @@ export const Project = Base => class extends Base {
     this.setState({ panel: null });
     this.replaceDoc({ ...d, sheets: [...d.sheets, sh], active: sh.id }, `Added the ${tpl.name} template`);
   }
-  // A Mermaid flowchart or class diagram fills an empty sheet, or else becomes a new sheet.
-  // Returns false when the text is not Mermaid. With `quiet`, Mermaid text without shapes also returns false.
-  importMermaid(text, quiet = false) {
+  // A Mermaid flowchart or class diagram fills an empty sheet, or else becomes a new sheet. Resolves to false
+  // when the text is not Mermaid. With `quiet`, Mermaid text without shapes also resolves to false.
+  async importMermaid(text, quiet = false) {
     let r;
     try {
-      r = mermaidSheet(text, { L: this.letter(), caps: this.state.doc.settings.caps, route: this.defRoute(), id: F.uid });
+      r = await mermaidSheet(text, { L: this.letter(), caps: this.state.doc.settings.caps, id: F.uid });
     } catch (err) {
       console.warn(err);
       this.flash('Could not read the Mermaid text.', 4000);
@@ -329,10 +329,10 @@ export const Project = Base => class extends Base {
   }
   readFile(f) {
     const r = new FileReader();
-    r.onload = () => {
+    r.onload = async () => {
       let data = null;
       try { data = JSON.parse(r.result); } catch { data = null; }
-      if (!data && this.importMermaid(r.result)) return;
+      if (!data && await this.importMermaid(r.result)) return;
       const doc = F.cleanDoc(data);
       if (doc) {
         doc.sheets = doc.sheets.map(s => ({ ...s, view: null }));

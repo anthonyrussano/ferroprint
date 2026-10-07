@@ -27,7 +27,7 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Frame cloud diagrams with boundary frames: AWS Cloud, Region, VPC and subnets, Azure subscriptions, resource groups and virtual networks, Google Cloud projects and VPC networks, and Alibaba Cloud regions, VPCs and vSwitches. Each frame shows the provider's group icon in its tab.
 - Draw UML class diagrams with classes, abstract classes, interfaces, enums and packages from the library. A class box grows to fit its members. Double-click the name, the attributes or the operations to edit them in place. In the attributes and operations, Enter adds a line, and `Ctrl Enter` saves.
 - Set a UML relation on a connector: association, inheritance, realization, dependency, aggregation or composition. Add a multiplicity at each end, such as `1` or `0..*`.
-- Import a Mermaid flowchart or class diagram. Paste the Mermaid text on the sheet, use **FROM MERMAID** in **New**, or open a `.mmd` file or a Markdown file with a ` ```mermaid ` block. Ferroprint lays out the shapes in layers. Subgraphs become zones, and namespaces become UML packages.
+- Import a Mermaid flowchart or class diagram. Paste the Mermaid text on the sheet, use **FROM MERMAID** in **New**, or open a `.mmd` file or a Markdown file with a ` ```mermaid ` block. Ferroprint places the shapes with dagre, the layout engine of Mermaid. Subgraphs become zones, namespaces become UML packages, and notes become note shapes. Connectors run as orthogonal lines in their own channels, with labels in the space that the layout keeps for them. Connectors of different kinds meet a shape at different points. The import reads the shapes of Mermaid 11 (`A@{ shape: cyl }`), link lengths such as `--->`, markdown labels and nested generics. It skips styles, classes and click handlers, and the message after the import gives the number of lines that it skipped. To let imported connectors route themselves again after you move shapes, select them and use **STRAIGHTEN**.
 - Start a sheet from a template: an AWS three-tier web app, an Azure hub-and-spoke network, a Google Cloud data pipeline, an Alibaba Cloud web app, a class diagram, a furnished apartment, a checkout flow or a microservices overview.
 - Connect shapes with elbow, straight or curved connectors. Drag from a port to fix the side where a connector leaves a shape, and release on a port to fix the side where it arrives. Drag the round handle on a selected connector to add a bend. Double-click a bend to remove it.
 - An elbow connector without bends goes around the shapes in its way. Zones, lines and freehand strokes are not in the way. A bend that you add on a route around shapes keeps the rest of the route.
@@ -131,7 +131,7 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/draw.jsx` | SVG drawing for shapes, connectors and dimension marks |
 | `src/library.jsx` | Library symbols, their default sizes and label positions |
 | `src/mermaid.js` | Reads Mermaid flowcharts and class diagrams, and makes a sheet |
-| `src/layout.js` | The layered layout for imported diagrams |
+| `src/layout.js` | The layout for imported diagrams: dagre, then orthogonal channels, tracks and ports for the connectors |
 | `src/pdf.js` | A small PDF writer for the PDF export |
 | `src/route.js` | Routes for elbow connectors around shapes |
 | `src/cloud.js` | Loads the cloud icon sets on demand, and holds the boundary frames |
