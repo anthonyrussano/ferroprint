@@ -3,6 +3,15 @@ import * as F from '../engine.js';
 import { MOD } from '../chrome.jsx';
 import { FRAME_INSET, RECENT_MAX, PIN_MAX, PALETTE_TOOLS, isLibraryTool, without } from './util.js';
 
+// The items that each style applies to. A UML relation sets its own line and ends.
+const STYLE = {
+  dashed: { node: n => !F.NOLINE[n.type], edge: e => !e.rel },
+  fill: { node: n => !F.NOFILL[n.type], edge: () => false },
+  size: { node: n => !F.LABELLESS[n.type], edge: () => false },
+  arrow: { node: n => n.type === 'line', edge: e => !e.rel },
+  route: { node: () => false, edge: () => true }
+};
+
 export const Commands = Base => class extends Base {
   // ---------- label editing
   startEdit(kind, id, field = 'label') {
@@ -107,11 +116,27 @@ export const Commands = Base => class extends Base {
     this.pushHistory();
     this.setNodes(a => a.map(n => (pos[n.id] != null ? { ...n, [P]: pos[n.id] } : n)));
   }
+  // Moves the selected shapes to the top or the bottom of the drawing order. They keep their order among themselves.
   arrange(front) {
-    const id = this.state.sel[0];
-    if (!id) return;
+    const ids = new Set(this.state.sel);
+    if (!this.sheet().nodes.some(n => ids.has(n.id))) return;
     this.pushHistory();
-    this.setNodes(a => { const n = a.find(q => q.id === id); if (!n) return a; const rest = a.filter(q => q.id !== id); return front ? [...rest, n] : [n, ...rest]; });
+    this.setNodes(a => { const picked = a.filter(q => ids.has(q.id)), rest = a.filter(q => !ids.has(q.id)); return front ? [...rest, ...picked] : [...picked, ...rest]; });
+  }
+  // Sets one style on every selected item that has the style, in one undo step.
+  styleSel(field, value) {
+    const ids = new Set(this.state.sel), ok = STYLE[field];
+    const put = x => (field === 'arrow' && value === 'none' && x.type ? without(x, 'arrow') : { ...x, [field]: value });
+    this.pushHistory();
+    this.updSheet(s => ({
+      nodes: s.nodes.map(n => (ids.has(n.id) && ok.node(n) ? put(n) : n)),
+      edges: s.edges.map(e => (ids.has(e.id) && ok.edge(e) ? put(e) : e))
+    }));
+  }
+  reverseLine() {
+    const id = this.state.sel[0];
+    this.pushHistory();
+    this.setNodes(a => a.map(n => (n.id === id && n.type === 'line' ? { ...n, pts: [...n.pts].reverse() } : n)));
   }
   setTool(id) { this.setState({ tool: id, temp: null, hover: null }); }
   // The default box of a shape, centered on a point and snapped to the grid.

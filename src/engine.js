@@ -31,8 +31,8 @@ const BASE_SHAPES = {
 export const SHAPES = { ...BASE_SHAPES, ...Object.fromEntries(Object.values(SYMBOLS).map(s => [s.id, { name: s.name, w: s.w, h: s.h, label: s.label }])) };
 const symbolSet = test => Object.fromEntries(Object.values(SYMBOLS).filter(test).map(s => [s.id, 1]));
 export const TYPE_NAME = { path: 'Freehand', line: 'Line', cloud: 'Cloud icon', class: 'Class', ...Object.fromEntries(Object.entries(SHAPES).map(([k, v]) => [k, v.name])) };
-export const TOOL_NAMES = { select: 'Select', hand: 'Pan', connector: 'Connector', pen: 'Pen', line: 'Line / wall', ...Object.fromEntries(Object.entries(SHAPES).map(([k, v]) => [k, v.name])) };
-export const KEYS = { v: 'select', h: 'hand', c: 'connector', p: 'pen', l: 'line', b: 'box', r: 'service', d: 'database', q: 'queue', u: 'actor', g: 'zone', k: 'decision', e: 'terminal', w: 'window', o: 'button', i: 'input', m: 'image', n: 'note', t: 'text' };
+export const TOOL_NAMES = { select: 'Select', hand: 'Pan', connector: 'Connector', pen: 'Pen', line: 'Line / wall', arrow: 'Arrow', ...Object.fromEntries(Object.entries(SHAPES).map(([k, v]) => [k, v.name])) };
+export const KEYS = { v: 'select', h: 'hand', c: 'connector', p: 'pen', l: 'line', a: 'arrow', b: 'box', r: 'service', d: 'database', q: 'queue', u: 'actor', g: 'zone', k: 'decision', e: 'terminal', w: 'window', o: 'button', i: 'input', m: 'image', n: 'note', t: 'text' };
 export const KEY_OF = Object.fromEntries(Object.entries(KEYS).map(([k, v]) => [v, k.toUpperCase()]));
 export const HINTS = {
   select: 'Click to select · drag to move · shift-click to add',
@@ -40,6 +40,7 @@ export const HINTS = {
   connector: 'Drag from one shape to another',
   pen: 'Draw freehand strokes',
   line: 'Drag to draw · shift snaps to 45°',
+  arrow: 'Drag to draw an arrow · shift snaps to 45°',
   zone: 'Drag to frame a region'
 };
 export const LABELLESS = { path: 1, line: 1, ...symbolSet(s => !s.lab) };
@@ -494,6 +495,8 @@ function cleanNode(n, ids) {
     if (pts.length < 2) return null;
     out.pts = type === 'line' ? pts.slice(0, 2) : pts;
     out.weight = oneOf(n.weight, ['s', 'm', 'l'], type === 'line' ? 'm' : 's');
+    // A line can have an arrowhead at its end or at both ends, so it can point without two shapes.
+    if (type === 'line' && (n.arrow === 'end' || n.arrow === 'both')) out.arrow = n.arrow;
   }
   return out;
 }

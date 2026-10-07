@@ -9,6 +9,7 @@ export const ICONS = {
   connector: I(<><path d="M3 5 H10 V15 H14" /><path d="M14 12.5 L17.5 15 L14 17.5 Z" style={{ fill: 'currentColor' }} /></>),
   pen: I(<path d="M3 14 C5 8 8 8 9 12 C10 16 13 15 15 9 L17 5" />, 1.4, { strokeLinecap: 'round' }),
   line: I(<path d="M4 16 L16 4" />, 3),
+  arrow: I(<><path d="M4 16 L14.5 5.5" /><path d="M16.5 3.5 L9.5 5.6 L14.4 10.5 Z" style={{ fill: 'currentColor' }} /></>, 1.6),
   box: I(<rect x="2" y="5" width="16" height="10" />),
   service: I(<rect x="2" y="5" width="16" height="10" rx="3.5" />),
   database: I(<><path d="M4 5 V15 A6 2.4 0 0 0 16 15 V5" /><ellipse cx="10" cy="5" rx="6" ry="2.4" /></>),
@@ -32,7 +33,7 @@ export const LIBRARY_ICON = I(<><rect x="3" y="3" width="6" height="6" /><rect x
 export const PIN_ICON = <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{ fill: 'none', stroke: 'currentColor', strokeWidth: 1.2 }}><path d="M4 1.5 H8 L7.4 5 L9.5 7 H2.5 L4.6 5 Z M6 7 V10.5" strokeLinejoin="round" /></svg>;
 
 export const PALETTE = [
-  { label: 'Draw', tools: ['select', 'hand', 'connector', 'pen', 'line'] },
+  { label: 'Draw', tools: ['select', 'hand', 'connector', 'arrow', 'pen', 'line'] },
   { label: 'System', tools: ['box', 'service', 'database', 'queue', 'actor', 'zone'] },
   { label: 'Flow', tools: ['decision', 'terminal'] },
   { label: 'Interface', tools: ['window', 'button', 'input', 'image'] },

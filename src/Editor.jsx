@@ -189,7 +189,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
           act={{
             front: () => this.arrange(true), back: () => this.arrange(false), dup: () => this.duplicate(), del: () => this.del(), wrap: () => this.wrapZone(),
             align: kind => this.align(kind), distribute: axis => this.distribute(axis),
-            rotate: () => this.rotateSel(), flip: () => this.flipSel(),
+            rotate: () => this.rotateSel(), flip: () => this.flipSel(), reverseLine: () => this.reverseLine(), style: (field, value) => this.styleSel(field, value),
             group: () => this.groupSel(), ungroup: () => this.ungroupSel(), lock: () => this.lockSel(),
             sides: patch => this.setEdgeSides(st.sel[0], patch), straighten: () => this.clearBends(st.sel[0]),
             noIcon: () => { const id = st.sel[0]; this.pushHistory(); this.setNodes(a => a.map(q => (q.id === id ? without(q, 'icon') : q))); },

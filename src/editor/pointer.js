@@ -31,11 +31,12 @@ export const Pointer = Base => class extends Base {
   onResize() { this.setState({ win: { w: window.innerWidth, h: window.innerHeight } }); }
   onBlurWin() { if (this.state.space) this.setState({ space: false }); }
 
-  hoverAt(p, exclude, tight) {
+  // The shape under point p. `connect` leaves out lines and freehand strokes, which a connector cannot join.
+  hoverAt(p, exclude, tight, connect) {
     const s = this.sheet(), k = this.view().k, pad = (tight ? 4 : 22) / k, ns = s.nodes;
     for (let i = ns.length - 1; i >= 0; i--) {
       const n = ns[i];
-      if (n.type === 'zone' || n.id === exclude) continue;
+      if (n.type === 'zone' || n.id === exclude || (connect && (n.type === 'line' || n.type === 'path'))) continue;
       const b = F.hitBox(n);
       if (p.x >= b.x - pad && p.x <= b.x + b.w + pad && p.y >= b.y - pad && p.y <= b.y + b.h + pad) return n.id;
     }
@@ -74,10 +75,16 @@ export const Pointer = Base => class extends Base {
     if (e.button === 1 || tool === 'hand' || space) { e.preventDefault(); this.drag = { type: 'pan', cx: e.clientX, cy: e.clientY, v0: this.view() }; this.setState({ panning: true }); return; }
     if (F.toolShape(tool)) { this.drag = { type: 'create', shape: tool, start: p, zone: F.toolShape(tool).type === 'zone' }; return; }
     if (tool === 'pen') { this.drag = { type: 'pen', pts: [p] }; this.setState({ sel: [] }); return; }
-    if (tool === 'line') { this.drag = { type: 'line', start: { x: this.sn(p.x), y: this.sn(p.y) } }; this.setState({ sel: [] }); return; }
+    if (tool === 'line' || tool === 'arrow') { this.drag = { type: 'line', arrow: tool === 'arrow', start: { x: this.sn(p.x), y: this.sn(p.y) } }; this.setState({ sel: [] }); return; }
+    if (kind === 'end') {
+      // An end handle of the selected connector moves that end to a different shape or side.
+      const ed = this.sheet().edges.find(x => x.id === id), end = Number(tg.getAttribute('data-i'));
+      if (ed) this.drag = { type: 'reconnect', id, end, fixed: end ? ed.from : ed.to, fixedSide: end ? ed.fromSide : ed.toSide, start: p, moved: false };
+      return;
+    }
     if (kind === 'port' || tool === 'connector') {
       // A drag from a port fixes the side where the connector leaves the shape.
-      const from = kind === 'port' || kind === 'node' ? id : this.hoverAt(p, null, true);
+      const from = kind === 'port' || kind === 'node' ? id : this.hoverAt(p, null, true, true);
       const fromSide = kind === 'port' ? tg.getAttribute('data-side') : null;
       if (from) { this.drag = { type: 'connect', from, fromSide }; this.setState({ temp: { from, fromSide, p, target: null }, sel: [] }); }
       return;
@@ -249,8 +256,16 @@ export const Pointer = Base => class extends Base {
       }
     } else if (d.type === 'connect') {
       // The target area reaches past the box, so the pointer can reach the ports around it.
-      const target = this.hoverAt(p, d.from, false);
+      const target = this.hoverAt(p, d.from, false, true);
       st.temp = { from: d.from, fromSide: d.fromSide, p, target, toSide: target ? this.portAt(target, p) : null };
+    } else if (d.type === 'reconnect') {
+      if (!d.moved) {
+        if (Math.hypot(p.x - d.start.x, p.y - d.start.y) * k < 3) { this.setState(st); return; }
+        d.moved = true;
+      }
+      // The preview runs from the end that stays. The connector hides until the drop.
+      const target = this.hoverAt(p, d.fixed, false, true);
+      st.temp = { from: d.fixed, fromSide: d.fixedSide, p, target, toSide: target ? this.portAt(target, p) : null, hide: d.id };
     } else if (d.type === 'wp' || d.type === 'wpadd') {
       if (!d.moved) {
         if (Math.hypot(p.x - d.start.x, p.y - d.start.y) * k < 3) { this.setState(st); return; }
@@ -278,7 +293,7 @@ export const Pointer = Base => class extends Base {
     } else if (d.type === 'line') {
       let q = { x: this.sn(p.x), y: this.sn(p.y) };
       if (e.shiftKey) q = F.constrain(d.start, q);
-      d.end = q; st.draft = { kind: 'line', pts: [d.start, q] };
+      d.end = q; st.draft = { kind: d.arrow ? 'arrow' : 'line', pts: [d.start, q] };
     }
     this.setState(st);
   }
@@ -312,7 +327,7 @@ export const Pointer = Base => class extends Base {
       st.sel = [d.id]; st.tool = 'select';
       if (d.shape === 'text' || d.shape === 'note') st.editing = { kind: 'node', id: d.id, value: F.SHAPES[d.shape].label };
     } else if (d.type === 'connect') {
-      const target = e.type === 'pointercancel' ? null : this.hoverAt(p, d.from, false);
+      const target = e.type === 'pointercancel' ? null : this.hoverAt(p, d.from, false, true);
       if (target) {
         this.pushHistory();
         const ed = { id: F.uid(), from: d.from, to: target, label: '', route: this.defRoute(), arrow: 'end', dashed: false };
@@ -323,6 +338,15 @@ export const Pointer = Base => class extends Base {
         st.sel = [ed.id];
       }
       st.temp = null; st.tool = 'select';
+    } else if (d.type === 'reconnect') {
+      const target = d.moved && e.type !== 'pointercancel' ? this.hoverAt(p, d.fixed, false, true) : null;
+      if (target) {
+        // A drop on a port fixes the side. A drop elsewhere on the shape lets the router choose the side.
+        const side = this.portAt(target, p), [key, sideKey] = d.end ? ['to', 'toSide'] : ['from', 'fromSide'];
+        this.pushHistory();
+        this.setEdges(es => es.map(x => (x.id === d.id ? (side ? { ...x, [key]: target, [sideKey]: side } : without({ ...x, [key]: target }, sideKey)) : x)));
+      }
+      st.temp = null;
     } else if (d.type === 'move') st.guides = [];
     else if (d.type === 'marquee') {
       st.marquee = null;
@@ -338,7 +362,8 @@ export const Pointer = Base => class extends Base {
     } else if (d.type === 'line') {
       if (d.end && Math.hypot(d.end.x - d.start.x, d.end.y - d.start.y) > 2) {
         this.pushHistory();
-        const n = { id: F.uid(), type: 'line', ...F.pathFrom([d.start, d.end]), weight: 'm', dashed: false, label: '', sub: '', fill: 'none', size: 'm', flip: false };
+        const n = { id: F.uid(), type: 'line', ...F.pathFrom([d.start, d.end]), weight: d.arrow ? 's' : 'm', dashed: false, label: '', sub: '', fill: 'none', size: 'm', flip: false };
+        if (d.arrow) n.arrow = 'end';
         this.setNodes(ns => [...ns, n]);
         st.sel = [n.id];
       }

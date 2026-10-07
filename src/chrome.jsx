@@ -308,6 +308,7 @@ export const LibraryPanel = memo(function LibraryPanel({ tool, theme, pins, onPi
 });
 
 const SOLID = [[false, 'Solid'], [true, 'Dashed']];
+const ARROWS = [['none', 'None'], ['end', 'End'], ['both', 'Both']];
 
 // A small line with the end markers of a UML relation.
 function RelIcon({ r }) {
@@ -380,11 +381,13 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
           {!NOFILL[n.type] && <Seg label="FILL" opts={[['none', 'None'], ['tint', 'Tint'], ['hatch', 'Hatch']]} value={n.fill || 'none'} onChange={v => set({ fill: v })} />}
           {!LABELLESS[n.type] && <Seg label="TEXT" opts={[['s', 'S'], ['m', 'M'], ['l', 'L']]} value={n.size || 'm'} onChange={v => set({ size: v })} />}
           {(n.type === 'path' || n.type === 'line') && <Seg label="WEIGHT" opts={[['s', 'Fine'], ['m', 'Medium'], ['l', 'Wall']]} value={n.weight || 'm'} onChange={v => set({ weight: v })} />}
+          {n.type === 'line' && <Seg label="ARROW" opts={ARROWS} value={n.arrow || 'none'} onChange={v => set({ arrow: v === 'none' ? undefined : v })} />}
         </section>
         <Acts list={[
           ['TO FRONT', act.front], ['TO BACK', act.back],
           TURN[n.type] && !locked && ['ROTATE 90°', act.rotate, { title: 'Rotate 90° clockwise (⇧R)' }],
           TURN[n.type] && !locked && ['FLIP', act.flip, { title: 'Mirror left to right (⇧H)' }],
+          n.type === 'line' && !locked && ['REVERSE', act.reverseLine, { title: 'Swap the two ends of the line' }],
           [locked ? 'UNLOCK' : 'LOCK', act.lock, { title: `${locked ? 'Unlock' : 'Lock'} the shape (${KSHIFT}${MOD}L)` }],
           ['DUPLICATE', act.dup],
           n.group && ['UNGROUP', act.ungroup, { title: `Ungroup the shapes (${KSHIFT}${MOD}G)` }],
@@ -408,11 +411,11 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
         <section>
           <div className="from-to">{nm(nodeById[e.from])} → {nm(nodeById[e.to])}</div>
           <Seg label="ROUTE" opts={[['elbow', 'Elbow'], ['straight', 'Straight'], ['curve', 'Curve']]} value={e.route} onChange={v => set({ route: v })} />
-          {!e.rel && <Seg label="ARROW" opts={[['none', 'None'], ['end', 'End'], ['both', 'Both']]} value={e.arrow} onChange={v => set({ arrow: v })} />}
+          {!e.rel && <Seg label="ARROW" opts={ARROWS} value={e.arrow} onChange={v => set({ arrow: v })} />}
           {!e.rel && <Seg label="LINE" opts={SOLID} value={!!e.dashed} onChange={v => set({ dashed: v })} />}
           <Seg label="FROM" opts={SIDE_OPTS} value={e.fromSide || 'auto'} onChange={v => act.sides({ fromSide: v })} />
           <Seg label="TO" opts={SIDE_OPTS} value={e.toSide || 'auto'} onChange={v => act.sides({ toSide: v })} />
-          <p className="hint tight">Drag the round handle on the line to add a bend. Double-click a square bend to remove it.</p>
+          <p className="hint tight">Drag an end to a different shape. Drag the round handle on the line to add a bend. Double-click a square bend to remove it.</p>
         </section>
         <section>
           <div className="caption">UML RELATION · {e.rel ? REL[e.rel].name.toUpperCase() : 'NONE'}</div>
@@ -444,6 +447,16 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
   if (count < 2) return null;
   const groups = new Set(nodes.map(n => n.group).filter(Boolean)), oneGroup = groups.size === 1 && nodes.every(n => n.group);
   const allLocked = nodes.length > 0 && nodes.every(n => n.locked);
+  // The style rows show only for items that have that style. A row shows a value when all its items agree.
+  const styled = {
+    dashed: [...nodes.filter(n => !NOLINE[n.type]), ...edges.filter(e => !e.rel)],
+    fill: nodes.filter(n => !NOFILL[n.type]),
+    size: nodes.filter(n => !LABELLESS[n.type]),
+    arrow: [...edges.filter(e => !e.rel), ...nodes.filter(n => n.type === 'line')],
+    route: edges
+  };
+  const same = (list, get) => { const vals = new Set(list.map(get)); return vals.size === 1 ? [...vals][0] : undefined; };
+  const hasStyle = Object.values(styled).some(list => list.length);
   return (
     <aside className="panel inspector" aria-label="Inspector">
       <header><h2>{oneGroup ? 'Group' : 'Selection'}</h2><span>{count} items</span></header>
@@ -459,7 +472,19 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
           <button type="button" className="act small" disabled={nodes.length < 3} title="Space three or more shapes evenly from top to bottom" onClick={() => act.distribute('y')}>SPACE DOWN</button>
         </div>
       </section>
+      {hasStyle && (
+        <section>
+          <div className="caption">STYLE · EVERY SELECTED ITEM</div>
+          {styled.dashed.length > 0 && <Seg label="LINE" opts={SOLID} value={same(styled.dashed, x => !!x.dashed)} onChange={v => act.style('dashed', v)} />}
+          {styled.fill.length > 0 && <Seg label="FILL" opts={[['none', 'None'], ['tint', 'Tint'], ['hatch', 'Hatch']]} value={same(styled.fill, x => x.fill || 'none')} onChange={v => act.style('fill', v)} />}
+          {styled.size.length > 0 && <Seg label="TEXT" opts={[['s', 'S'], ['m', 'M'], ['l', 'L']]} value={same(styled.size, x => x.size || 'm')} onChange={v => act.style('size', v)} />}
+          {styled.arrow.length > 0 && <Seg label="ARROW" opts={ARROWS} value={same(styled.arrow, x => x.arrow || 'none')} onChange={v => act.style('arrow', v)} />}
+          {styled.route.length > 0 && <Seg label="ROUTE" opts={[['elbow', 'Elbow'], ['straight', 'Straight'], ['curve', 'Curve']]} value={same(styled.route, x => x.route)} onChange={v => act.style('route', v)} />}
+        </section>
+      )}
       <Acts list={[
+        nodes.length > 0 && ['TO FRONT', act.front, { title: 'Draw the selected shapes on top' }],
+        nodes.length > 0 && ['TO BACK', act.back, { title: 'Draw the selected shapes below the others' }],
         nodes.length > 1 && !oneGroup && ['GROUP', act.group, { title: `Group the shapes (${MOD}G)` }],
         groups.size > 0 && ['UNGROUP', act.ungroup, { title: `Ungroup the shapes (${KSHIFT}${MOD}G)` }],
         nodes.length > 0 && [allLocked ? 'UNLOCK' : 'LOCK', act.lock, { title: `${allLocked ? 'Unlock' : 'Lock'} the shapes (${KSHIFT}${MOD}L)` }],
@@ -474,7 +499,7 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
 }
 
 const KEYMAP = [
-  ['V', 'Select'], ['H · Space', 'Pan'], ['C', 'Connector'], ['P · L', 'Pen · line / wall'],
+  ['V', 'Select'], ['H · Space', 'Pan'], ['C', 'Connector'], ['A', 'Arrow'], ['P · L', 'Pen · line / wall'],
   ['B R D Q', 'Box · service · database · queue'], ['U G', 'Actor · zone'], ['K E', 'Decision · terminal'],
   ['W O I M', 'Window · button · input · image'], ['N T', 'Note · text'], ['Enter', 'Edit label'],
   ['Double-click', 'Edit label · new text'], ['Esc', 'Cancel · clear selection'],

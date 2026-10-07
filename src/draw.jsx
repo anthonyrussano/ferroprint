@@ -194,8 +194,19 @@ export function renderNode(n, ctx) {
     case 'path':
     case 'line': {
       const pts = linePts(n), wgt = WEIGHTS[n.weight || 'm'];
-      let d;
-      if (n.type === 'line' || pts.length < 3) d = 'M' + pts.map(q => `${f1(q.x)} ${f1(q.y)}`).join(' L');
+      let d, heads = [];
+      if (n.type === 'line' && n.arrow && pts.length === 2) {
+        // The line stops at the base of each arrowhead, so its end cap does not show past the tip.
+        const [a, b] = pts, len = Math.hypot(b.x - a.x, b.y - a.y) || 1, u = { x: (b.x - a.x) / len, y: (b.y - a.y) / len };
+        const Ln = Math.min(len * 0.45, 9 + wgt * 2.5), W = 3.5 + wgt * 1.1;
+        const head = (key, tip, dir) => {
+          const bx = tip.x - dir.x * Ln, by = tip.y - dir.y * Ln;
+          return <polygon key={key} points={`${f1(tip.x)},${f1(tip.y)} ${f1(bx - dir.y * W)},${f1(by + dir.x * W)} ${f1(bx + dir.y * W)},${f1(by - dir.x * W)}`} fill={t.ink} />;
+        };
+        const s0 = n.arrow === 'both' ? { x: a.x + u.x * Ln * 0.8, y: a.y + u.y * Ln * 0.8 } : a, s1 = { x: b.x - u.x * Ln * 0.8, y: b.y - u.y * Ln * 0.8 };
+        d = `M${f1(s0.x)} ${f1(s0.y)} L${f1(s1.x)} ${f1(s1.y)}`;
+        heads = [head('h2', b, u), n.arrow === 'both' && head('h1', a, { x: -u.x, y: -u.y })].filter(Boolean);
+      } else if (n.type === 'line' || pts.length < 3) d = 'M' + pts.map(q => `${f1(q.x)} ${f1(q.y)}`).join(' L');
       else {
         d = `M${f1(pts[0].x)} ${f1(pts[0].y)}`;
         for (let i = 1; i < pts.length - 1; i++) d += ` Q${f1(pts[i].x)} ${f1(pts[i].y)} ${f1((pts[i].x + pts[i + 1].x) / 2)} ${f1((pts[i].y + pts[i + 1].y) / 2)}`;
@@ -204,7 +215,8 @@ export function renderNode(n, ctx) {
       }
       k.push(
         <path key="hit" d={d} fill="none" stroke="transparent" strokeWidth={Math.max(14, wgt + 10)} pointerEvents="stroke" />,
-        <path key="s" d={d} fill="none" stroke={t.ink} strokeWidth={wgt} strokeLinecap={n.type === 'line' ? 'square' : 'round'} strokeLinejoin="round" strokeDasharray={n.dashed ? `${wgt * 3} ${wgt * 2.2}` : undefined} />
+        <path key="s" d={d} fill="none" stroke={t.ink} strokeWidth={wgt} strokeLinecap={n.type !== 'line' ? 'round' : n.arrow ? 'butt' : 'square'} strokeLinejoin="round" strokeDasharray={n.dashed ? `${wgt * 3} ${wgt * 2.2}` : undefined} />,
+        ...heads
       );
       break;
     }

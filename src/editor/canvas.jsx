@@ -90,6 +90,14 @@ export const Canvas = Base => class extends Base {
     if (geoSel) {
       // Round handles add a bend. Square handles move a bend, and a double-click removes it.
       geoSel.handles.forEach(hd => out.push(<circle key={'wa' + hd.i} cx={hd.x} cy={hd.y} r={4 / k} fill={t.paper} stroke={A} strokeWidth={1.3 / k} data-k="wpadd" data-id={selEdge.id} data-i={hd.i} style={{ cursor: 'copy' }}><title>Drag to bend the connector</title></circle>));
+      // The end handles move an end of the connector to a different shape.
+      [geoSel.p1, geoSel.p2].forEach((q, i) => out.push(
+        <g key={'end' + i} data-k="end" data-id={selEdge.id} data-i={i} style={{ cursor: 'move' }}>
+          <circle cx={q.x} cy={q.y} r={10 / k} fill="transparent" />
+          <circle cx={q.x} cy={q.y} r={4.5 / k} fill={A} stroke={t.paper} strokeWidth={1.2 / k} />
+          <title>Drag this end to a different shape</title>
+        </g>
+      ));
       (selEdge.pts || []).forEach((q, i) => out.push(<rect key={'wp' + i} x={q.x - 4.5 / k} y={q.y - 4.5 / k} width={9 / k} height={9 / k} fill={A} stroke={t.paper} strokeWidth={1 / k} data-k="wp" data-id={selEdge.id} data-i={i} style={{ cursor: 'move' }}><title>Drag to move the bend. Double-click to remove it.</title></rect>));
     }
     st.guides.forEach((gd, i) => out.push(<line key={'g' + i} x1={gd.x1} y1={gd.y1} x2={gd.x2} y2={gd.y2} stroke={A} strokeWidth={1 / k} strokeDasharray={`${3 / k} ${3 / k}`} pointerEvents="none" />));
@@ -198,7 +206,7 @@ export const Canvas = Base => class extends Base {
           <g transform={ptf}>
             <g ref={this.setContent}>
               {zones.map(n => this.cachedNode(n, ctx, key))}
-              {s.edges.map(e => this.cachedEdge(e, map, ctx, key, selSet.has(e.id)))}
+              {s.edges.map(e => (st.temp && st.temp.hide === e.id ? null : this.cachedEdge(e, map, ctx, key, selSet.has(e.id))))}
               {rest.map(n => this.cachedNode(n, ctx, key))}
             </g>
             <g>{this.renderOverlay(s, t, map, selSet)}</g>
