@@ -5,8 +5,8 @@ import { isCloudKey, cloudIcon, cloudLabel, cloudProvider, PROVIDER_NAME, FRAME 
 export const MONO = "'IBM Plex Mono', ui-monospace, monospace";
 
 export const LETTER = {
-  technical: { family: "'Barlow Condensed', 'Arial Narrow', sans-serif", weight: 500, ls: 0.05, lh: 1.15, css: 'family=Barlow+Condensed:wght@500;600' },
-  hand: { family: "'Architects Daughter', 'Comic Sans MS', cursive", weight: 400, ls: 0.03, lh: 1.3, css: 'family=Architects+Daughter&family=Barlow+Condensed:wght@600' }
+  technical: { id: 'technical', family: "'Barlow Condensed', 'Arial Narrow', sans-serif", weight: 500, ls: 0.05, lh: 1.15 },
+  hand: { id: 'hand', family: "'Architects Daughter', 'Comic Sans MS', cursive", weight: 400, ls: 0.03, lh: 1.3 }
 };
 export const SIZES = { s: 13, m: 16, l: 22 };
 export const WEIGHTS = { s: 1.5, m: 3, l: 6 };
@@ -559,25 +559,6 @@ export function cleanDoc(raw) {
 }
 
 // ---------- export
-export async function fontCSS(L, cache) {
-  if (cache[L.css] != null) return cache[L.css];
-  let out = '';
-  try {
-    const css = await (await fetch(`https://fonts.googleapis.com/css2?${L.css}&family=IBM+Plex+Mono:wght@400&display=swap`)).text();
-    const blocks = css.split('@font-face').slice(1).map(b => '@font-face' + b.split('/*')[0]).filter(b => b.indexOf('U+0000-00FF') >= 0);
-    for (const b of blocks) {
-      const m = b.match(/url\((https:[^)]+)\)/);
-      if (!m) continue;
-      const blob = await (await fetch(m[1])).blob();
-      const data = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
-      out += b.replace(m[1], data) + '\n';
-    }
-  } catch {
-    out = '';
-  }
-  cache[L.css] = out;
-  return out;
-}
 export function download(blob, name) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);

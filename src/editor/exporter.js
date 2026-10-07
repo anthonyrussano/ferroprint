@@ -2,6 +2,7 @@
 import * as F from '../engine.js';
 import { loadCloud } from '../cloud.js';
 import { logoSVG } from '../logo.jsx';
+import { fontCSS } from '../fonts.js';
 
 export const Exporter = Base => class extends Base {
   titleBlockSVG(x, y, w, hh, t, L, s, meta) {
@@ -25,7 +26,7 @@ export const Exporter = Base => class extends Base {
     const W = Math.ceil(Math.max(b.w + pad * 2, tbW + 160)), H = Math.ceil(b.h + pad * 2 + tbH);
     const x0 = Math.floor(b.x + b.w / 2 - W / 2), y0 = Math.floor(b.y - pad);
     const content = this.contentEl ? new XMLSerializer().serializeToString(this.contentEl) : '';
-    const fonts = await F.fontCSS(L, this.fontCache);
+    const fonts = await fontCSS(L.id, this.fontCache);
     const tb = this.titleBlockSVG(x0 + W - 16 - tbW, y0 + H - 16 - tbH, tbW, tbH, t, L, s, meta);
     const str = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="${x0} ${y0} ${W} ${H}"><defs><style><![CDATA[${fonts}]]></style>`
       + `<pattern id="ex-minor" width="${g}" height="${g}" patternUnits="userSpaceOnUse"><path d="M${g} 0 L0 0 0 ${g}" fill="none" stroke="${t.minor}" stroke-width="2"/></pattern>`

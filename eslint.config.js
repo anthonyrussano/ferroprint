@@ -18,5 +18,9 @@ export default [
   {
     files: ['scripts/**', 'vite.config.js', 'eslint.config.js', 'test/**'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } }
+  },
+  {
+    files: ['scripts/sw-template.js'],
+    languageOptions: { globals: { ...globals.serviceworker, __FILES__: 'readonly' } }
   }
 ];

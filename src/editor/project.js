@@ -35,7 +35,7 @@ export const Project = Base => class extends Base {
   }
   // Class boxes grow to fit their text. The fit runs after every change, so each way to edit a class keeps it right.
   fitClasses() {
-    const s = this.sheet(), L = this.letter(), caps = this.state.doc.settings.caps, key = `${L.css}|${caps}|${this.fontGen}`, fix = {};
+    const s = this.sheet(), L = this.letter(), caps = this.state.doc.settings.caps, key = `${L.id}|${caps}|${this.fontGen}`, fix = {};
     s.nodes.forEach(n => {
       if (n.type !== 'class') return;
       const c = this.classFit.get(n);

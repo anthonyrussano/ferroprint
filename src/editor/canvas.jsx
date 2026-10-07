@@ -182,7 +182,7 @@ export const Canvas = Base => class extends Base {
     const map = this.nodeMap(s), selSet = new Set(st.sel);
     const zones = s.nodes.filter(n => n.type === 'zone'), rest = s.nodes.filter(n => n.type !== 'zone');
     const ptf = `translate(${v.x} ${v.y}) scale(${k})`;
-    const key = `${st.mode}|${ctx.L.css}|${ctx.caps}|${s.unit}|${g}|${this.fontGen}|${this.cloudGen}`;
+    const key = `${st.mode}|${ctx.L.id}|${ctx.caps}|${s.unit}|${g}|${this.fontGen}|${this.cloudGen}`;
     const panTool = st.tool === 'hand' || st.space;
     const cursor = panTool ? (st.panning ? 'grabbing' : 'grab') : st.tool === 'select' ? 'default' : 'crosshair';
     return (

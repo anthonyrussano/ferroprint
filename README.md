@@ -38,6 +38,13 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Switch between a blueprint (white on blue) and a whiteprint (blue on white) look.
 - Export a sheet as PNG or SVG with a title block. Export the full project as JSON.
 
+## Offline and privacy
+
+- After the first visit, Ferroprint opens without a network. A service worker keeps the app, the fonts and the 4 cloud icon sets in the browser.
+- The fonts are part of the app. Ferroprint sends no request to a font service or to any other server.
+- A new version replaces the old one when you open Ferroprint with a network.
+- An exported SVG or PNG carries its fonts, so it looks the same on a computer without these fonts.
+
 Press `?` in the app to see all keyboard shortcuts.
 
 ## How saving works
@@ -126,4 +133,6 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/editor/exporter.js` | PNG and SVG export |
 | `src/editor/canvas.jsx` | The sheet, the selection overlay and the label editor |
 | `src/chrome.jsx` | Toolbars, inspector, panels, title block and status bar |
+| `src/fonts.js` | The bundled fonts, and the font files that an exported SVG carries |
+| `scripts/service-worker.mjs` | A Vite plugin that writes `sw.js` with the files to keep for offline use |
 | `src/storage.js` | The project store in IndexedDB, with `localStorage` when IndexedDB is missing |
