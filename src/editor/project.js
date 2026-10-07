@@ -9,6 +9,11 @@ import { SAVE_DELAY, toolCloud } from './util.js';
 
 // Tabs tell each other when they save or delete a project.
 const CHANNEL = 'ferroprint';
+// True when two versions of a project differ only in their views and their open sheet.
+const sameContent = (a, b) => {
+  const strip = d => JSON.stringify({ ...d, active: null, sheets: d.sheets.map(s => ({ ...s, view: null })) });
+  return strip(a) === strip(b);
+};
 
 export const Project = Base => class extends Base {
   // ---------- persistence
@@ -119,6 +124,8 @@ export const Project = Base => class extends Base {
     if (id !== this.projectId || !json || json === this._savedJSON) return;
     const parsed = parseDoc(json);
     if (!parsed) return;
+    // A pan, a zoom or a sheet change in the other tab changes nothing here, so this tab keeps its undo history.
+    if (sameContent(parsed.doc, F.pruneFiles(this.state.doc))) { this._savedJSON = parsed.json; return; }
     const cur = this.state.doc, inc = parsed.doc, local = new Map(cur.sheets.map(s => [s.id, s]));
     const doc = {
       ...inc,
@@ -160,16 +167,26 @@ export const Project = Base => class extends Base {
     this.setState({ doc, panel: null, ...this.resetTransient() });
     if (msg) this.flash(msg, 4000);
   }
+  // Saves the open project before a different project takes its place. If the save fails, the
+  // project stays open, so its edits are not lost.
+  async leaveProject() {
+    if (this._busy) { this.flash('Wait for the export to finish.', 3000); return false; }
+    if (await this.flushSave()) return true;
+    this.flash('Could not save this project, so it stays open. Export JSON to keep a copy, or free some browser storage.', 7000);
+    return false;
+  }
   async openProject(id) {
     if (id === this.projectId) { this.setState({ panel: null }); return; }
-    await this.flushSave();
+    if (!(await this.leaveProject())) return;
     const json = await this.store.get(id), parsed = json && parseDoc(json);
     if (!parsed) { this.flash('Could not read that project.', 4000); this.refreshProjects(); return; }
     this.showProject(id, parsed.doc, parsed.json, `Opened ${parsed.doc.meta.project || 'the project'}`);
   }
   // A new project goes to the list. The open project stays in the list, so nothing is lost.
   async newProject(doc, msg) {
-    await this.flushSave();
+    // A browser that blocks storage keeps one project. The change then has an undo instead.
+    if (this.state.save === 'off') { this.replaceDoc(doc, 'Replaced the project. This browser blocks storage, so it keeps one project.'); return; }
+    if (!(await this.leaveProject())) return;
     this.showProject(F.uid(), doc, null, msg);
   }
   async duplicateProject(id) {
@@ -183,6 +200,8 @@ export const Project = Base => class extends Base {
     if (id === this.projectId) return;
     const [list, json] = await Promise.all([this.store.list(), this.store.get(id)]), meta = list.find(p => p.id === id);
     if (!(await this.store.remove(id))) { this.flash('Could not delete the project.', 4000); return; }
+    // A journal from a tab that closed with unsaved changes would bring the project back.
+    clearJournal(id);
     this.post({ type: 'deleted', id });
     this.refreshProjects();
     this.flash(`Deleted ${(meta && meta.name) || 'the project'}`, 7000, meta && json ? {
@@ -245,11 +264,18 @@ export const Project = Base => class extends Base {
     this.replaceDoc({ ...d, sheets: [...d.sheets, sh], active: sh.id }, `Added the ${tpl.name} template`);
   }
   // A Mermaid flowchart or class diagram fills an empty sheet, or else becomes a new sheet.
-  // Returns false when the text is not Mermaid.
-  importMermaid(text) {
-    const r = mermaidSheet(text, { L: this.letter(), caps: this.state.doc.settings.caps, route: this.defRoute(), id: F.uid });
+  // Returns false when the text is not Mermaid. With `quiet`, Mermaid text without shapes also returns false.
+  importMermaid(text, quiet = false) {
+    let r;
+    try {
+      r = mermaidSheet(text, { L: this.letter(), caps: this.state.doc.settings.caps, route: this.defRoute(), id: F.uid });
+    } catch (err) {
+      console.warn(err);
+      this.flash('Could not read the Mermaid text.', 4000);
+      return true;
+    }
     if (!r) return false;
-    if (r.error) { this.flash(r.error, 4000); return true; }
+    if (r.error) { if (quiet) return false; this.flash(r.error, 4000); return true; }
     const d = this.state.doc, cur = this.sheet(), number = cur.nodes.length ? this.nextNumber() : cur.number;
     const sh = F.cleanSheet({ ...r, number, view: null }, new Set(d.sheets.filter(s => s.id !== cur.id).map(x => x.id)), number);
     const skipped = r.skipped ? ` Ferroprint skipped ${r.skipped} ${r.skipped === 1 ? 'line' : 'lines'} that it cannot read.` : '';

@@ -99,9 +99,11 @@ function openLocal(s) {
 const NONE = { kind: 'none', list: async () => [], get: async () => null, put: async () => false, remove: async () => false };
 
 // Every call returns a value. An error gives false, null or an empty list, so the editor can report it.
-function safe(store) {
+function safe(store, fallback) {
   return {
     kind: store.kind,
+    // True when the browser has IndexedDB, but it did not open. The projects then go to localStorage for this visit.
+    fallback: !!fallback,
     list: () => store.list().catch(() => []),
     get: id => store.get(id).catch(() => null),
     put: (meta, json) => store.put(meta, json).then(ok => ok === true, () => false),
@@ -112,7 +114,9 @@ function safe(store) {
 export async function openStore(env = {}) {
   const factory = 'indexedDB' in env ? env.indexedDB : typeof indexedDB !== 'undefined' ? indexedDB : null;
   const ls = 'localStorage' in env ? env.localStorage && probe(env.localStorage) : local();
-  return safe((await openIDB(factory)) || openLocal(ls) || NONE);
+  const idb = await openIDB(factory);
+  if (idb) return safe(idb);
+  return safe(openLocal(ls) || NONE, !!factory);
 }
 
 // ---------- recovery
@@ -141,6 +145,21 @@ async function recover(store, s) {
     } catch { /* a damaged journal is dropped */ }
     s.removeItem(key);
   }
+  // Projects that a visit saved to localStorage, because IndexedDB did not open then, move into IndexedDB.
+  if (store.kind === 'idb' && s.getItem(LIST_KEY) != null) {
+    let saved = [];
+    try { saved = JSON.parse(s.getItem(LIST_KEY)) || []; } catch { saved = []; }
+    let moved = true;
+    for (const meta of Array.isArray(saved) ? saved : []) {
+      const json = meta && s.getItem(DOC_PREFIX + meta.id), cur = meta && (await store.list()).find(p => p.id === meta.id);
+      if (!json || !parseDoc(json) || (cur && cur.updated >= meta.updated)) continue;
+      moved = (await store.put(meta, json)) && moved;
+    }
+    if (moved) {
+      (Array.isArray(saved) ? saved : []).forEach(meta => { if (meta) s.removeItem(DOC_PREFIX + meta.id); });
+      s.removeItem(LIST_KEY);
+    }
+  }
   // Ferroprint 1 kept one project in localStorage. Move it into the store as a project.
   const legacy = s.getItem(LEGACY_KEY);
   if (legacy == null) return null;
@@ -148,7 +167,8 @@ async function recover(store, s) {
   if (!parsed) return null;
   const meta = projectMeta(Math.random().toString(36).slice(2, 9), parsed.doc);
   if (!(await store.put(meta, parsed.json))) return null;
-  if (store.kind === 'idb') s.removeItem(LEGACY_KEY);
+  // The old key goes, so the next start does not move the project again.
+  s.removeItem(LEGACY_KEY);
   return meta.id;
 }
 

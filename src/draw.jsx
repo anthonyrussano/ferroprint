@@ -229,8 +229,9 @@ export function renderNode(n, ctx) {
   return <g key={n.id} data-k="node" data-id={n.id}>{k}</g>;
 }
 
-export function renderEdge(e, map, ctx, selected) {
-  const { t, L } = ctx, geo = edgeGeom(e, map, ctx.obstacles);
+// `geo` is optional: a caller that has the geometry already passes it in.
+export function renderEdge(e, map, ctx, selected, geo = edgeGeom(e, map, ctx.obstacles)) {
+  const { t, L } = ctx;
   if (!geo) return null;
   const c = selected ? t.accent : t.ink, rel = REL[e.rel];
   const arrow = (key, p, u) => {

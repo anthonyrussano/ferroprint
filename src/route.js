@@ -66,18 +66,11 @@ class Heap {
   }
 }
 
-const uniq = list => [...new Set(list.map(v => Math.round(v * 2) / 2))].sort((a, b) => a - b);
-function indexOf(list, v) {
-  let lo = 0, hi = list.length - 1;
-  const t = Math.round(v * 2) / 2;
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1;
-    if (list[mid] === t) return mid;
-    if (list[mid] < t) lo = mid + 1; else hi = mid - 1;
-  }
-  return -1;
-}
-const firstAtLeast = (list, v) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < v) lo = m + 1; else hi = m; } return lo; };
+// Grid lines keep their exact values, so the tests against the box edges below agree with the lines.
+const EPS = 1e-6;
+const uniq = list => list.slice().sort((a, b) => a - b).filter((v, i, all) => !i || v - all[i - 1] > EPS);
+const firstAtLeast = (list, v) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < v - EPS) lo = m + 1; else hi = m; } return lo; };
+const indexOf = (list, v) => { const i = firstAtLeast(list, v); return i < list.length && Math.abs(list[i] - v) <= EPS ? i : -1; };
 
 // Finds a route from box a to box b. `sidesA` and `sidesB` are the sides that each end can use.
 // Returns { pts, sides } with the points from the edge of a to the edge of b, or null.
@@ -94,12 +87,12 @@ export function route(a, b, sidesA, sidesB, obstacles) {
   blocks.forEach(r => {
     const i0 = firstAtLeast(xs, r.x0), i1 = firstAtLeast(xs, r.x1), j0 = firstAtLeast(ys, r.y0), j1 = firstAtLeast(ys, r.y1);
     for (let j = j0; j <= j1 && j < ny; j++) {
-      const inY = ys[j] > r.y0 && ys[j] < r.y1;
+      const inY = ys[j] > r.y0 + EPS && ys[j] < r.y1 - EPS;
       for (let i = i0; i <= i1 && i < nx; i++) {
         // Segment from node (i, j) to the right: inside when the row is inside and the span is inside.
-        if (inY && i < i1 && xs[i] >= r.x0 && xs[i + 1] <= r.x1) blockH[j * nx + i] = 1;
-        const inX = xs[i] > r.x0 && xs[i] < r.x1;
-        if (inX && j < j1 && ys[j] >= r.y0 && ys[j + 1] <= r.y1) blockV[j * nx + i] = 1;
+        if (inY && i < i1 && xs[i] >= r.x0 - EPS && xs[i + 1] <= r.x1 + EPS) blockH[j * nx + i] = 1;
+        const inX = xs[i] > r.x0 + EPS && xs[i] < r.x1 - EPS;
+        if (inX && j < j1 && ys[j] >= r.y0 - EPS && ys[j + 1] <= r.y1 + EPS) blockV[j * nx + i] = 1;
       }
     }
   });

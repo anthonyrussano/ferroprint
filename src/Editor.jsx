@@ -77,6 +77,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     document.addEventListener('cut', this.onCut);
     document.addEventListener('paste', this.onPaste);
     this.openChannel();
+    if (this.store.fallback) this.flash('The browser database did not open, so this visit saves to localStorage. The next start moves the projects into the database.', 9000);
     this.checkShared();
     // A cloud set arrives after the first render, so the sheet draws again when one loads.
     this.offCloud = onCloudLoad(() => { this.cloudGen++; this.forceUpdate(); });

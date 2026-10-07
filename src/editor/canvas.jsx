@@ -11,12 +11,14 @@ export const Canvas = Base => class extends Base {
     this.nodeCache.set(n, { key, el });
     return el;
   }
-  // A connector draws again when it, its shapes or the shapes in its way change.
+  // A connector draws again only when its path changes. A move of a shape elsewhere keeps the drawing.
   cachedEdge(e, map, ctx, key, selected) {
     const a = map[e.from], b = map[e.to], obs = ctx.obstacles, c = this.edgeCache.get(e);
     if (c && c.key === key && c.a === a && c.b === b && c.obs === obs && c.selected === selected) return c.el;
-    const el = renderEdge(e, map, ctx, selected);
-    this.edgeCache.set(e, { key, a, b, obs, selected, el });
+    const geo = F.edgeGeom(e, map, obs), d = geo && geo.d;
+    if (c && c.key === key && c.selected === selected && c.d === d) { this.edgeCache.set(e, { ...c, a, b, obs }); return c.el; }
+    const el = renderEdge(e, map, ctx, selected, geo);
+    this.edgeCache.set(e, { key, a, b, obs, selected, el, d });
     return el;
   }
   renderOverlay(s, t, map, selSet) {
@@ -194,6 +196,12 @@ export const Canvas = Base => class extends Base {
     const key = `${st.mode}|${ctx.L.id}|${ctx.caps}|${s.unit}|${g}|${this.fontGen}|${this.cloudGen}`;
     const panTool = st.tool === 'hand' || st.space;
     const cursor = panTool ? (st.panning ? 'grabbing' : 'grab') : st.tool === 'select' ? 'default' : 'crosshair';
+    // While shapes move or change size, only their own connectors find a new route. The others keep the
+    // shapes in their way from before the drag, so they keep their drawing. The drop routes them all again.
+    const d = this.drag, busy = d && (d.type === 'move' ? new Set(Object.keys(d.orig)) : d.type === 'resize' ? new Set([d.orig.id]) : d.type === 'create' && d.id ? new Set([d.id]) : null);
+    if (!busy) this._calmObs = ctx.obstacles;
+    const calm = busy && this._calmObs ? { ...ctx, obstacles: this._calmObs } : ctx;
+    const edgeCtx = e => (busy && !busy.has(e.from) && !busy.has(e.to) ? calm : ctx);
     return (
       <div ref={this.setCanvas} className="canvas" onPointerDown={this.onDown} onDoubleClick={this.onDbl} onDragOver={this.onDragOver} onDrop={this.onDrop} onContextMenu={e => e.preventDefault()} style={{ cursor }}>
         <svg width="100%" height="100%" style={{ display: 'block' }}>
@@ -207,7 +215,7 @@ export const Canvas = Base => class extends Base {
           <g transform={ptf}>
             <g ref={this.setContent}>
               {zones.map(n => this.cachedNode(n, ctx, key))}
-              {s.edges.map(e => (st.temp && st.temp.hide === e.id ? null : this.cachedEdge(e, map, ctx, key, selSet.has(e.id))))}
+              {s.edges.map(e => (st.temp && st.temp.hide === e.id ? null : this.cachedEdge(e, map, edgeCtx(e), key, selSet.has(e.id))))}
               {rest.map(n => this.cachedNode(n, ctx, key))}
             </g>
             <g>{this.renderOverlay(s, t, map, selSet)}</g>

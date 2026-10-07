@@ -3,7 +3,10 @@
 import { layout } from './layout.js';
 import { classLayout, measure, SHAPES, clamp } from './engine.js';
 
-const HEADER = /^(flowchart|graph|classDiagram)(?:-v2)?\b\s*([A-Za-z]{2})?/;
+// The first line: the diagram type, and for a flowchart an optional direction. Statements can follow a semicolon.
+const HEADER = /^(?:(flowchart|graph)(?:-v2)?(?: (TB|TD|BT|RL|LR|tb|td|bt|rl|lr))?|(classDiagram)(?:-v2)?) ?(?:;|$)/;
+// A longer line is skipped, so a large paste cannot keep the parser busy.
+const MAX_LINE = 4000;
 const SKIP = /^(classDef|class\s+[\w,]+\s+\w+\s*$|style|linkStyle|click|accTitle|accDescr|callback|link|cssClass|note)\b/;
 
 // Removes the YAML front matter and the comments. Returns the title from the front matter, if any.
@@ -18,8 +21,10 @@ function prepare(text) {
     if (t) title = t[1].trim().replace(/^["']|["']$/g, '');
     src = src.slice(fm[0].length);
   }
-  const lines = src.split('\n').map(l => l.replace(/%%.*$/, '').trim()).filter(Boolean);
-  return { lines, title };
+  // Runs of spaces become one space, so no pattern below can try many ways to split a run.
+  const all = src.split('\n').map(l => l.replace(/%%.*$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const lines = all.filter(l => l.length <= MAX_LINE);
+  return { lines, title, long: all.length - lines.length };
 }
 
 export const isMermaid = text => {
@@ -31,20 +36,21 @@ export const isMermaid = text => {
 function cleanLabel(s) {
   return String(s).trim().replace(/^"([\s\S]*)"$/, '$1').replace(/^`([\s\S]*)`$/, '$1')
     .replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
-    .replace(/#quot;/g, '"').replace(/#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/#quot;/g, '"').replace(/#(\d+);/g, (_, n) => (Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : ''))
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
     .replace(/\*\*(.+?)\*\*/g, '$1').replace(/\*(.+?)\*/g, '$1').trim();
 }
 
-// Splits a line into statements at semicolons that are outside brackets and quotes.
+// Splits a line into statements at semicolons that are outside brackets, quotes and |link labels|.
 function statements(line) {
   const out = [];
-  let depth = 0, quote = false, cur = '';
+  let depth = 0, quote = false, pipe = false, cur = '';
   for (const ch of line) {
     if (ch === '"') quote = !quote;
     else if (!quote && '([{'.includes(ch)) depth++;
     else if (!quote && ')]}'.includes(ch)) depth = Math.max(0, depth - 1);
-    if (ch === ';' && !quote && !depth) { out.push(cur); cur = ''; } else cur += ch;
+    else if (!quote && !depth && ch === '|') pipe = !pipe;
+    if (ch === ';' && !quote && !depth && !pipe) { out.push(cur); cur = ''; } else cur += ch;
   }
   out.push(cur);
   return out.map(s => s.trim()).filter(Boolean);
@@ -94,7 +100,7 @@ function parseFlow(lines, dir) {
     if (cls) i += cls[0].length;
     const n = mention(id);
     // The last definition of a shape wins, as in Mermaid.
-    if (label != null) { n.label = label; n.shape = shape; }
+    if (label != null) { n.label = label; n.shape = shape; n.defined = true; }
     return { n, rest: rest.slice(i) };
   };
   const nodeGroup = rest => {
@@ -145,7 +151,7 @@ function parseFlow(lines, dir) {
       open.push(grp);
       return;
     }
-    if (/^end$/i.test(st)) { open.pop(); return; }
+    if (st === 'end') { open.pop(); return; }
     if (/^direction\s+\w+$/i.test(st) || SKIP.test(st)) return;
     let first = nodeGroup(st);
     if (!first) { g.skipped++; return; }
@@ -167,6 +173,8 @@ function parseFlow(lines, dir) {
     }
     if (rest.trim()) g.skipped++;
   }));
+  // The name of a subgraph in a link means the subgraph, so its zone takes the connector.
+  g.groups.forEach(grp => { const n = g.nodes.get(grp.id); if (n && !n.defined) g.nodes.delete(grp.id); });
   return g;
 }
 
@@ -241,13 +249,14 @@ function parseClass(lines) {
 }
 
 export function parseMermaid(text) {
-  const { lines, title } = prepare(text);
+  const { lines, title, long } = prepare(text);
   const head = lines.length ? lines[0].match(HEADER) : null;
   if (!head) return null;
   const dir = (head[2] || 'TB').toUpperCase().replace('TD', 'TB');
   // A flowchart can start on the line of its header, for example `graph TD; A-->B`.
-  const g = head[1] === 'classDiagram' ? parseClass(lines) : parseFlow([lines[0].slice(head[0].length), ...lines.slice(1)], ['TB', 'BT', 'LR', 'RL'].includes(dir) ? dir : 'TB');
+  const g = head[3] ? parseClass(lines) : parseFlow([lines[0].slice(head[0].length), ...lines.slice(1)], dir);
   g.title = title;
+  g.skipped += long;
   return g;
 }
 
@@ -273,7 +282,8 @@ function flowSize(n, L) {
 export function mermaidSheet(text, { L, caps = true, route = 'elbow', id = () => Math.random().toString(36).slice(2, 9) }) {
   const g = parseMermaid(text);
   if (!g || !g.nodes.size) return g ? { error: 'The Mermaid text has no shapes.' } : null;
-  const ids = new Map([...g.nodes.keys(), ...g.groups.map(x => x.id)].map(k => [k, id()]));
+  // A group and a shape can have the same name, so each has its own map of ids.
+  const ids = new Map([...g.nodes.keys()].map(k => [k, id()])), zoneIds = new Map(g.groups.map(x => [x.id, id()]));
   const nodes = [...g.nodes.values()].map(n => {
     const base = { id: ids.get(n.id), x: 0, y: 0, label: n.label, sub: '', dashed: false, fill: 'none', size: 'm', flip: false };
     if (g.kind === 'class') {
@@ -283,12 +293,18 @@ export function mermaidSheet(text, { L, caps = true, route = 'elbow', id = () =>
     }
     return { ...base, type: n.shape, ...flowSize(n, L), groups: n.groups || [] };
   });
-  const byKey = new Map([...g.nodes.keys()].map((k, i) => [k, nodes[i]]));
+  // In the layout, a link to a group counts as a link to the first shape of the group.
+  const keys = [...g.nodes.keys()];
+  const stand = k => {
+    if (ids.has(k)) return ids.get(k);
+    const member = keys.find(q => (g.nodes.get(q).groups || []).includes(k));
+    return member ? ids.get(member) : null;
+  };
   // Inheritance points up to the parent, so for the layout the parent comes first.
   const up = e => e.rel === 'inherit' || e.rel === 'realize';
   const place = layout(
-    nodes.map(n => ({ id: n.id, w: n.w, h: n.h, groups: n.groups.map(k => ids.get(k)) })),
-    g.edges.filter(e => byKey.has(e.from) && byKey.has(e.to)).map(e => (up(e) ? { from: ids.get(e.to), to: ids.get(e.from) } : { from: ids.get(e.from), to: ids.get(e.to) })),
+    nodes.map(n => ({ id: n.id, w: n.w, h: n.h, groups: n.groups.map(k => zoneIds.get(k)) })),
+    g.edges.map(e => [stand(e.from), stand(e.to), up(e)]).filter(([a, b]) => a && b && a !== b).map(([a, b, flip]) => (flip ? { from: b, to: a } : { from: a, to: b })),
     { dir: g.dir, gapX: 60, gapY: 80 + 40 * Math.max(0, ...nodes.map(n => n.groups.length)) }
   );
   nodes.forEach(n => { const p = place.get(n.id); n.x = snap(p.x) + 80; n.y = snap(p.y) + 80 + (g.groups.length ? PAD_TOP : 0); });
@@ -299,14 +315,14 @@ export function mermaidSheet(text, { L, caps = true, route = 'elbow', id = () =>
     if (!kids.length) return;
     const x0 = Math.min(...kids.map(k => k.x)) - PAD, y0 = Math.min(...kids.map(k => k.y)) - PAD_TOP;
     const x1 = Math.max(...kids.map(k => k.x + k.w)) + PAD, y1 = Math.max(...kids.map(k => k.y + k.h)) + PAD;
-    const z = { id: ids.get(grp.id), type: 'zone', x: snap(x0), y: snap(y0), w: ceilTo(x1 - snap(x0)), h: ceilTo(y1 - snap(y0)), label: grp.label, sub: '', dashed: !grp.pkg, fill: 'none', size: 's', flip: false };
+    const z = { id: zoneIds.get(grp.id), type: 'zone', x: snap(x0), y: snap(y0), w: ceilTo(x1 - snap(x0)), h: ceilTo(y1 - snap(y0)), label: grp.label, sub: '', dashed: !grp.pkg, fill: 'none', size: 's', flip: false };
     if (grp.pkg) z.pkg = true;
     boxOf.set(grp.id, z);
     zones.unshift(z);
   });
-  const known = new Set([...g.nodes.keys(), ...boxOf.keys()]);
-  const edges = g.edges.filter(e => known.has(e.from) && known.has(e.to) && e.from !== e.to).map(e => {
-    const out = { id: id(), from: ids.get(e.from), to: ids.get(e.to), label: e.label || '', route, arrow: e.arrow || 'end', dashed: !!e.dashed };
+  const target = k => ids.get(k) || (boxOf.has(k) ? boxOf.get(k).id : null);
+  const edges = g.edges.filter(e => target(e.from) && target(e.to) && e.from !== e.to).map(e => {
+    const out = { id: id(), from: target(e.from), to: target(e.to), label: e.label || '', route, arrow: e.arrow || 'end', dashed: !!e.dashed };
     if (e.rel) out.rel = e.rel;
     if (e.m1) out.m1 = e.m1;
     if (e.m2) out.m2 = e.m2;

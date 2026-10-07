@@ -286,6 +286,18 @@ export function edgeGeom(e, map, obstacles) {
 // The boxes that elbow connectors go around: every shape except zones, lines and freehand strokes.
 export const obstaclesOf = nodes => nodes.filter(n => n.type !== 'zone' && n.type !== 'path' && n.type !== 'line').map(n => ({ id: n.id, ...hitBox(n) }));
 const ALL_SIDES = ['top', 'right', 'bottom', 'left'];
+// Routes repeat while one shape moves: the other connectors keep their ends and the shapes near them.
+// A small cache keeps those routes, so the router runs only for connectors near the shape that moves.
+const ROUTE_CACHE = new Map(), ROUTE_CACHE_MAX = 500;
+const boxKey = b => `${b.x},${b.y},${b.w},${b.h}`;
+function cachedRoute(a, b, sa, sb, use) {
+  const key = [boxKey(a), boxKey(b), sa.join(), sb.join(), ...use.map(boxKey)].join('|');
+  if (ROUTE_CACHE.has(key)) { const hit = ROUTE_CACHE.get(key); ROUTE_CACHE.delete(key); ROUTE_CACHE.set(key, hit); return hit; }
+  const r = findRoute(a, b, sa, sb, use);
+  ROUTE_CACHE.set(key, r);
+  if (ROUTE_CACHE.size > ROUTE_CACHE_MAX) ROUTE_CACHE.delete(ROUTE_CACHE.keys().next().value);
+  return r;
+}
 const grown = (b, m) => ({ x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m });
 function avoid(geo, a, b, fs, ts, obstacles) {
   // A shape that touches an end, or holds it, such as a window around its buttons, is not in the way.
@@ -296,9 +308,11 @@ function avoid(geo, a, b, fs, ts, obstacles) {
   const near = grown(rectFrom({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y) }, { x: Math.max(a.x + a.w, b.x + b.w), y: Math.max(a.y + a.h, b.y + b.h) }), 160);
   let use = others.filter(o => inter(o, near));
   for (let k = 0; k < 4; k++) {
-    const r = findRoute(a, b, fs ? [fs] : ALL_SIDES, ts ? [ts] : ALL_SIDES, use);
+    const r = cachedRoute(a, b, fs ? [fs] : ALL_SIDES, ts ? [ts] : ALL_SIDES, use);
     if (!r) return null;
     const all = simplify(r.pts), hit = others.filter(o => !use.includes(o) && crosses(all, [o]));
+    // A route must never cross a shape that it was given. If it does, the simple route stays.
+    if (crosses(all, use)) return null;
     if (!hit.length) {
       const handles = [];
       all.slice(1).forEach((q, i) => { if (Math.hypot(q.x - all[i].x, q.y - all[i].y) > 24) handles.push({ x: (q.x + all[i].x) / 2, y: (q.y + all[i].y) / 2, i }); });

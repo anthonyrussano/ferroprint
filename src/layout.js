@@ -19,17 +19,20 @@ export function layout(nodes, edges, { dir = 'TB', gapX = 60, gapY = 90, groupGa
   // 1. Cycles: a connector that closes a cycle points the other way while the layers are found.
   const out = new Map(V.map(v => [v, []]));
   E.forEach(e => out.get(e.from).push(e));
+  // The search uses its own stack, so a long chain of shapes cannot overflow the call stack.
   const state = new Map();
-  const visit = v => {
-    state.set(v, 1);
-    out.get(v).forEach(e => {
-      const s = state.get(e.to);
+  V.forEach(root => {
+    if (state.get(root)) return;
+    const stack = [[root, 0]];
+    state.set(root, 1);
+    while (stack.length) {
+      const top = stack[stack.length - 1], list = out.get(top[0]);
+      if (top[1] >= list.length) { state.set(top[0], 2); stack.pop(); continue; }
+      const e = list[top[1]++], s = state.get(e.to);
       if (s === 1) e.back = true;
-      else if (!s) visit(e.to);
-    });
-    state.set(v, 2);
-  };
-  V.forEach(v => { if (!state.get(v)) visit(v); });
+      else if (!s) { state.set(e.to, 1); stack.push([e.to, 0]); }
+    }
+  });
   const dag = E.map(e => (e.back ? { from: e.to, to: e.from } : e));
 
   // 2. Layers: each shape goes one row below the lowest shape that points to it.
