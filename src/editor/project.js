@@ -59,7 +59,7 @@ export const Project = Base => class extends Base {
   async flushSave() {
     clearTimeout(this._saveT); this._saveT = null;
     if (this.state.save === 'off') return false;
-    const doc = this.state.doc, json = JSON.stringify(doc), id = this.projectId;
+    const doc = F.pruneFiles(this.state.doc), json = JSON.stringify(doc), id = this.projectId;
     if (json === this._savedJSON) {
       if (this.state.save !== 'saved' && !this._writing) this.setState({ save: 'saved' });
       return true;
@@ -87,9 +87,9 @@ export const Project = Base => class extends Base {
   onHide(e) {
     if (e.type === 'visibilitychange' && document.visibilityState !== 'hidden') return;
     if (this.state.save === 'off') return;
-    const json = JSON.stringify(this.state.doc);
+    const doc = F.pruneFiles(this.state.doc), json = JSON.stringify(doc);
     if (json === this._savedJSON) return;
-    this._journaled = writeJournal(projectMeta(this.projectId, this.state.doc), json) || this._journaled;
+    this._journaled = writeJournal(projectMeta(this.projectId, doc), json) || this._journaled;
     this.flushSave();
   }
 
@@ -244,7 +244,7 @@ export const Project = Base => class extends Base {
   async openShare() {
     this.setState({ panel: 'share', share: { url: null } });
     try {
-      const url = await shareLink(this.state.doc);
+      const url = await shareLink(F.pruneFiles(this.state.doc));
       this.setState(st => (st.panel === 'share' ? { share: { url } } : null));
     } catch {
       this.setState(st => (st.panel === 'share' ? { share: { error: true } } : null));
@@ -269,9 +269,11 @@ export const Project = Base => class extends Base {
     this.setState({ incoming: null, panel: null });
     if (!inc || mode === 'cancel') return;
     if (mode === 'new') { this.newProject(inc, 'Opened the shared project as a new project'); return; }
-    const d = this.state.doc, ids = new Set(d.sheets.map(sh => sh.id));
-    const added = inc.sheets.map((sh, i) => F.cleanSheet(sh, ids, 'A-' + (101 + d.sheets.length + i)));
-    this.replaceDoc({ ...d, sheets: [...d.sheets, ...added], active: added[0].id }, `Added ${added.length} shared ${added.length === 1 ? 'sheet' : 'sheets'}`);
+    const d = this.state.doc, ids = new Set(d.sheets.map(sh => sh.id)), files = this.mergeFiles(inc.files);
+    const added = inc.sheets.map((sh, i) => F.cleanSheet(sh, ids, 'A-' + (101 + d.sheets.length + i)))
+      .map(sh => ({ ...sh, nodes: sh.nodes.map(n => (n.file ? { ...n, file: files.ids[n.file] } : n)) }));
+    const merged = files.add ? { ...d, files: { ...(d.files || {}), ...files.add } } : d;
+    this.replaceDoc({ ...merged, sheets: [...d.sheets, ...added], active: added[0].id }, `Added ${added.length} shared ${added.length === 1 ? 'sheet' : 'sheets'}`);
   }
 
   onFile(e) {
@@ -304,7 +306,7 @@ export const Project = Base => class extends Base {
   }
   exportJSON() {
     this.flushSave();
-    const d = this.state.doc;
+    const d = F.pruneFiles(this.state.doc);
     F.download(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }), `${F.slug(d.meta.project || 'ferroprint')}.ferroprint.json`);
     this.flash('Downloaded JSON');
   }

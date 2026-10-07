@@ -57,31 +57,6 @@ export const Commands = Base => class extends Base {
     this.updSheet(s => ({ nodes: s.nodes.filter(n => !ids.has(n.id)), edges: s.edges.filter(e => !ids.has(e.id) && !ids.has(e.from) && !ids.has(e.to)) }));
     this.setState({ sel: [] });
   }
-  copy() {
-    const s = this.sheet(), ids = new Set(this.state.sel), nodes = s.nodes.filter(n => ids.has(n.id));
-    if (!nodes.length) return false;
-    const nid = new Set(nodes.map(n => n.id));
-    this.clip = JSON.parse(JSON.stringify({ nodes, edges: s.edges.filter(e => nid.has(e.from) && nid.has(e.to)) }));
-    this.pasteN = 0;
-    return true;
-  }
-  paste() {
-    if (!this.clip) return;
-    this.pasteN++;
-    // A pasted group becomes a new group. Pasted shapes are not locked, so they can move into place.
-    const off = this.g() * this.pasteN, map = {}, groups = {};
-    const nodes = this.clip.nodes.map(n => {
-      const id = F.uid(), c = without({ ...n, id, x: n.x + off, y: n.y + off }, 'locked');
-      map[n.id] = id;
-      if (n.group) c.group = groups[n.group] || (groups[n.group] = F.uid());
-      return c;
-    });
-    const edges = this.clip.edges.map(e => ({ ...e, id: F.uid(), from: map[e.from], to: map[e.to], ...(e.pts ? { pts: F.shiftPts(e.pts, off, off) } : {}) }));
-    this.pushHistory();
-    this.updSheet(s => ({ nodes: [...s.nodes, ...nodes], edges: [...s.edges, ...edges] }));
-    this.setState({ sel: [...nodes.map(n => n.id), ...edges.map(e => e.id)] });
-  }
-  duplicate() { if (this.copy()) this.paste(); }
   wrapZone() {
     const s = this.sheet(), ids = new Set(this.state.sel), ns = s.nodes.filter(n => ids.has(n.id));
     if (!ns.length) return;
@@ -224,9 +199,7 @@ export const Commands = Base => class extends Base {
     if (mod) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.doRedo(); else this.doUndo(); }
       else if (k === 'y') { e.preventDefault(); this.doRedo(); }
-      else if (k === 'c') this.copy();
-      else if (k === 'x') { if (this.copy()) this.del(); }
-      else if (k === 'v') { e.preventDefault(); this.paste(); }
+      else if (k === 'c' || k === 'x' || k === 'v') this.clipKey(k);
       else if (k === 'd') { e.preventDefault(); this.duplicate(); }
       else if (k === 'a') { e.preventDefault(); const s = this.sheet(); this.setState({ sel: [...s.nodes.filter(n => !n.locked).map(n => n.id), ...s.edges.map(x => x.id)] }); }
       else if (e.code === 'KeyG') { e.preventDefault(); if (e.altKey) this.wrapZone(); else if (e.shiftKey) this.ungroupSel(); else this.groupSel(); }
@@ -242,6 +215,7 @@ export const Commands = Base => class extends Base {
     }
     if (e.key === '?') { this.togglePanel('help'); return; }
     if (e.key === '/') { e.preventDefault(); this.setState({ panel: 'library' }); return; }
+    if (e.shiftKey && !e.altKey && k === 'c') { this.copyImage(); return; }
     if (e.shiftKey && !e.altKey && k === 'r') { this.rotateSel(); return; }
     if (e.shiftKey && !e.altKey && k === 'h') { this.flipSel(); return; }
     if (k === 'enter') {

@@ -32,6 +32,10 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - To move an end of a connector to a different shape, select the connector and drag the end. Release the end on a port to fix the side.
 - Draw free arrows with the arrow tool (`A`). A line can have an arrowhead at its end or at both ends. **REVERSE** swaps the ends.
 - Select more than one item to set the line, the fill, the text size, the arrows or the route of all of them at once. **TO FRONT** and **TO BACK** move all the selected shapes.
+- Copy shapes with `Ctrl C` and paste them with `Ctrl V` in any tab and any project. The clipboard holds the shapes as JSON text.
+- Paste an image or plain text, or drop an image file on the sheet. An image becomes an image shape, and text becomes a text label. To put a picture in an image shape, select the shape and use **CHOOSE IMAGE**. Ferroprint scales an image down to 1600 px on its longest side.
+- Press `Shift C` to copy the selection as a PNG. With nothing selected, `Shift C` copies the whole sheet.
+- Drop a Ferroprint JSON file on the sheet to open it as a new project.
 - Group shapes with `Ctrl G`, so they select and move as one. `Ctrl`-click selects one shape inside a group. Lock a shape with `Ctrl Shift L`, so it does not move. A locked background plan lets clicks through to the shapes on top.
 - Turn on clean mode with **Clean** in the top bar or `Ctrl \` (`⌘\` on macOS). Clean mode shows only the toolbar and the drawing. A click on a shape opens the inspector, so you can still edit it. To show everything again, press the same keys or use **SHOW ALL** at the top of the toolbar.
 - Share a project with a link. The link holds the whole project in its `#` part, which the browser does not send to a server.

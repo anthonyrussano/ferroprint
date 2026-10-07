@@ -174,10 +174,14 @@ export function renderNode(n, ctx) {
     }
     case 'input': k.push(hit, <rect key="s" {...S} x={x} y={y} width={w} height={hh} rx={2} />, ...lab({ x: x + 12, anchor: 'start', maxW: w - 24, maxLines: 1, color: t.muted, sub: '' })); break;
     case 'image': {
-      k.push(hit, <rect key="s" {...S} x={x} y={y} width={w} height={hh} />, <path key="x" d={`M${x} ${y} L${x + w} ${y + hh} M${x + w} ${y} L${x} ${y + hh}`} stroke={t.line} strokeWidth={1} fill="none" />);
+      // A shape with an image file shows the picture. Without one, it is the crossed placeholder of a wireframe.
+      const src = n.file && ctx.files ? ctx.files[n.file] : null;
+      if (src) k.push(hit, <image key="img" href={src} x={x} y={y} width={w} height={hh} preserveAspectRatio="xMidYMid meet" />, <rect key="s" x={x} y={y} width={w} height={hh} fill="none" stroke={t.ink} strokeWidth={1.2} strokeDasharray={dash} />);
+      else k.push(hit, <rect key="s" {...S} x={x} y={y} width={w} height={hh} />, <path key="x" d={`M${x} ${y} L${x + w} ${y + hh} M${x + w} ${y} L${x} ${y + hh}`} stroke={t.line} strokeWidth={1} fill="none" />);
       if (n.label) {
         const fs = SIZES[n.size || 'm'] * 0.85, str = txt(ctx, n.label), tw = measure(str, `${L.weight} ${fs}px ${L.family}`) + str.length * L.ls * fs + 14;
-        k.push(<rect key="lb" x={cx - tw / 2} y={cy - fs * 0.85} width={tw} height={fs * 1.7} fill={t.paper} />, ...lab({ scale: 0.85, maxLines: 1, maxW: w, sub: '' }));
+        const ly = src ? y + hh - fs * 1.2 : cy;
+        k.push(<rect key="lb" x={cx - tw / 2} y={ly - fs * 0.85} width={tw} height={fs * 1.7} fill={t.paper} />, ...lab({ cy: ly, scale: 0.85, maxLines: 1, maxW: w, sub: '' }));
       }
       break;
     }

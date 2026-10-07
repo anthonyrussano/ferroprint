@@ -392,6 +392,9 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
           ['DUPLICATE', act.dup],
           n.group && ['UNGROUP', act.ungroup, { title: `Ungroup the shapes (${KSHIFT}${MOD}G)` }],
           n.type === 'zone' && n.icon && ['REMOVE ICON', act.noIcon, { title: 'Remove the frame icon from the tab' }],
+          n.type === 'image' && [n.file ? 'NEW IMAGE' : 'CHOOSE IMAGE', act.chooseImage, { title: 'Show a picture in this shape. You can also paste or drop an image on the sheet.' }],
+          n.file && ['REMOVE IMAGE', act.removeImage, { title: 'Show the placeholder again' }],
+          ['COPY AS PNG', act.copyImage, { title: 'Copy this shape to the clipboard as a picture (⇧C)' }],
           ['DELETE', act.del, { danger: true, disabled: locked, title: locked ? 'Unlock the shape to delete it' : undefined }]
         ]} />
       </aside>
@@ -492,6 +495,7 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
         nodes.some(n => TURN[n.type]) && ['FLIP', act.flip, { title: 'Mirror the doors and furniture (⇧H)' }],
         nodes.length > 0 && ['WRAP IN ZONE', act.wrap, { title: `Draw a zone around the shapes (${ALT}${MOD}G)` }],
         nodes.length > 0 && ['DUPLICATE', act.dup],
+        ['COPY AS PNG', act.copyImage, { title: 'Copy the selection to the clipboard as a picture (⇧C)' }],
         ['DELETE', act.del, { danger: true }]
       ]} />
     </aside>
@@ -503,8 +507,8 @@ const KEYMAP = [
   ['B R D Q', 'Box · service · database · queue'], ['U G', 'Actor · zone'], ['K E', 'Decision · terminal'],
   ['W O I M', 'Window · button · input · image'], ['N T', 'Note · text'], ['Enter', 'Edit label'],
   ['Double-click', 'Edit label · new text'], ['Esc', 'Cancel · clear selection'],
-  [`${MOD}Z · ${MOD}${KSHIFT}Z`, 'Undo · redo'], [`${MOD}C · X · V`, 'Copy · cut · paste'],
-  [`${MOD}D`, 'Duplicate'], [`${MOD}A`, 'Select all'], [`${MOD}G · ${KSHIFT}${MOD}G`, 'Group · ungroup'],
+  [`${MOD}Z · ${MOD}${KSHIFT}Z`, 'Undo · redo'], [`${MOD}C · X · V`, 'Copy · cut · paste shapes, images and text'],
+  [`${MOD}D`, 'Duplicate'], [`${KSHIFT}C`, 'Copy the selection or the sheet as a PNG'], [`${MOD}A`, 'Select all'], [`${MOD}G · ${KSHIFT}${MOD}G`, 'Group · ungroup'],
   [`${ALT}${MOD}G`, 'Wrap selection in zone'], [`${KSHIFT}${MOD}L`, 'Lock · unlock'], [`${MOD}click`, 'Select one shape in a group'],
   ['Drag a connector', 'Add a bend · double-click a bend to remove it'],
   ['/', 'Library: shapes and cloud icons'], [`${KSHIFT}R · ${KSHIFT}H`, 'Rotate · flip doors and furniture'],

@@ -464,6 +464,10 @@ export function exampleDoc() {
 }
 
 // ---------- validation: every document that comes from storage or a file goes through here
+const ID = /^[a-z0-9]{1,16}$/;
+// Images are data URLs of raster formats only. An SVG image could carry a script.
+const IMAGE_DATA = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/]+=*$/;
+const MAX_IMAGE_CHARS = 12e6;
 const num = v => typeof v === 'number' && Number.isFinite(v);
 const str = (v, d = '') => (typeof v === 'string' ? v : typeof v === 'number' ? String(v) : d);
 const oneOf = (v, list, d) => (list.includes(v) ? v : d);
@@ -487,8 +491,9 @@ function cleanNode(n, ids) {
   if (TURN[type]) out.rot = oneOf(n.rot, [0, 90, 180, 270], 0);
   if ((type === 'cloud' || type === 'zone') && isCloudKey(n.icon)) out.icon = n.icon;
   if (type === 'zone' && n.pkg === true) out.pkg = true;
+  if (type === 'image' && typeof n.file === 'string' && ID.test(n.file)) out.file = n.file;
   if (type === 'class') Object.assign(out, { kind: oneOf(n.kind, Object.keys(UML).filter(k => !UML[k].pkg), 'class'), attrs: str(n.attrs).slice(0, 5000), ops: str(n.ops).slice(0, 5000) });
-  if (typeof n.group === 'string' && /^[a-z0-9]{1,16}$/.test(n.group)) out.group = n.group;
+  if (typeof n.group === 'string' && ID.test(n.group)) out.group = n.group;
   if (n.locked === true) out.locked = true;
   if (type === 'path' || type === 'line') {
     const pts = Array.isArray(n.pts) ? n.pts.filter(p => Array.isArray(p) && num(p[0]) && num(p[1])).map(p => [p[0], p[1]]) : [];
@@ -546,19 +551,43 @@ export function cleanSettings(raw) {
     route: oneOf(s.route, ROUTES, DEFAULT_SETTINGS.route)
   };
 }
+// The image files of a project: id → data URL. Only the files that a shape uses stay.
+export function cleanFiles(raw, used) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.entries(raw).forEach(([id, v]) => {
+    if (used.has(id) && ID.test(id) && typeof v === 'string' && v.length <= MAX_IMAGE_CHARS && IMAGE_DATA.test(v)) out[id] = v;
+  });
+  return out;
+}
+const usedFiles = sheets => new Set(sheets.flatMap(s => s.nodes.filter(n => n.file).map(n => n.file)));
 // Returns a valid document, or null when the input is not a Ferroprint project.
 export function cleanDoc(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sheets)) return null;
   const sheetIds = new Set();
-  const sheets = raw.sheets.map((s, i) => cleanSheet(s, sheetIds, 'A-' + (101 + i))).filter(Boolean);
+  let sheets = raw.sheets.map((s, i) => cleanSheet(s, sheetIds, 'A-' + (101 + i))).filter(Boolean);
   if (!sheets.length) return null;
+  const files = cleanFiles(raw.files, usedFiles(sheets));
+  // An image shape without its file shows the placeholder.
+  sheets = sheets.map(s => (s.nodes.some(n => n.file && !files[n.file]) ? { ...s, nodes: s.nodes.map(n => (n.file && !files[n.file] ? dropKey(n, 'file') : n)) } : s));
   const m = raw.meta && typeof raw.meta === 'object' ? raw.meta : {};
-  return {
+  const doc = {
     meta: { project: str(m.project), drawnBy: str(m.drawnBy), date: str(m.date), rev: str(m.rev) },
     settings: cleanSettings(raw.settings),
     sheets,
     active: sheets.some(s => s.id === raw.active) ? raw.active : sheets[0].id
   };
+  if (Object.keys(files).length) doc.files = files;
+  return doc;
+}
+const dropKey = (o, key) => { const { [key]: _, ...rest } = o; return rest; };
+// Leaves out the image files that no shape uses any more, for example after a delete.
+export function pruneFiles(doc) {
+  if (!doc.files) return doc;
+  const used = usedFiles(doc.sheets), ids = Object.keys(doc.files);
+  if (ids.every(id => used.has(id))) return doc;
+  const files = Object.fromEntries(ids.filter(id => used.has(id)).map(id => [id, doc.files[id]]));
+  return Object.keys(files).length ? { ...doc, files } : dropKey(doc, 'files');
 }
 
 // ---------- export

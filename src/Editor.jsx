@@ -10,6 +10,7 @@ import { Commands } from './editor/commands.js';
 import { Project } from './editor/project.js';
 import { Exporter } from './editor/exporter.js';
 import { Canvas } from './editor/canvas.jsx';
+import { Clipboard } from './editor/clipboard.js';
 import { RECENT_MAX, PIN_MAX, isLibraryTool, without } from './editor/util.js';
 
 function textureFor(mode) {
@@ -19,7 +20,7 @@ function textureFor(mode) {
 }
 const TEXTURES = { blue: textureFor('blue'), white: textureFor('white') };
 
-export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(History(Component)))))) {
+export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(Pointer(History(Component))))))) {
   // `boot` holds the store and the project to open. See boot() in storage.js.
   constructor(props) {
     super(props);
@@ -47,9 +48,9 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     this.pointers = new Map();
     this.fontCache = {}; this.fontGen = 0;
     this.nodeCache = new WeakMap(); this.edgeCache = new WeakMap(); this.classFit = new WeakMap(); this.cloudGen = 0;
-    this.barRef = createRef(); this.fileRef = createRef();
+    this.barRef = createRef(); this.fileRef = createRef(); this.imageRef = createRef();
     this.canvasEl = null; this.contentEl = null;
-    ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash'].forEach(k => { this[k] = this[k].bind(this); });
+    ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash', 'onCopy', 'onCut', 'onPaste', 'onDragOver', 'onDrop', 'onImageFile'].forEach(k => { this[k] = this[k].bind(this); });
     // Stable handlers let the library panel skip renders while the pointer moves.
     this.lib = { pick: id => this.pickSymbol(id), pin: id => this.togglePin(id), drag: (id, e) => this.startPlace(id, e), close: () => this.setState({ panel: null }) };
     this.tpl = { add: id => this.addTemplate(id), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
@@ -72,6 +73,9 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     window.addEventListener('pagehide', this.onHide);
     document.addEventListener('visibilitychange', this.onHide);
     window.addEventListener('hashchange', this.onHash);
+    document.addEventListener('copy', this.onCopy);
+    document.addEventListener('cut', this.onCut);
+    document.addEventListener('paste', this.onPaste);
     this.openChannel();
     this.checkShared();
     // A cloud set arrives after the first render, so the sheet draws again when one loads.
@@ -94,6 +98,9 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
     window.removeEventListener('pagehide', this.onHide);
     document.removeEventListener('visibilitychange', this.onHide);
     window.removeEventListener('hashchange', this.onHash);
+    document.removeEventListener('copy', this.onCopy);
+    document.removeEventListener('cut', this.onCut);
+    document.removeEventListener('paste', this.onPaste);
     if (this.offCloud) this.offCloud();
     this.closeChannel();
     if (this._saveT) this.flushSave();
@@ -106,7 +113,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
   g() { return this.state.doc.settings.grid; }
   letter() { return this.state.doc.settings.lettering === 'technical' ? F.LETTER.technical : F.LETTER.hand; }
   defRoute() { return this.state.doc.settings.route; }
-  drawCtx(s) { return { t: F.THEMES[this.state.mode], L: this.letter(), caps: this.state.doc.settings.caps, unit: s.unit, g: this.g() }; }
+  drawCtx(s) { return { t: F.THEMES[this.state.mode], L: this.letter(), caps: this.state.doc.settings.caps, unit: s.unit, g: this.g(), files: this.state.doc.files }; }
   measure() { const r = this.canvasEl ? this.canvasEl.getBoundingClientRect() : null; return r && r.width ? { w: r.width, h: r.height } : this.state.size; }
   view() { return this.sheet().view || this.fitView() || { x: 160, y: 120, k: 1 }; }
   fitView() {
@@ -129,6 +136,11 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
   nodeMap(s) { const m = {}; s.nodes.forEach(n => { m[n.id] = n; }); return m; }
   toWorld(cx, cy) { const r = this.canvasEl ? this.canvasEl.getBoundingClientRect() : { left: 0, top: 0 }, v = this.view(); return { x: (cx - r.left - v.x) / v.k, y: (cy - r.top - v.y) / v.k }; }
 
+  onImageFile(e) {
+    const f = e.target.files && e.target.files[0], id = this.state.sel[0];
+    e.target.value = '';
+    if (f && id) this.setImage(id, f);
+  }
   flash(msg, ms = 2400, action = null) {
     this.setState({ toast: { msg, action } });
     clearTimeout(this._toastT);
@@ -192,6 +204,9 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
             rotate: () => this.rotateSel(), flip: () => this.flipSel(), reverseLine: () => this.reverseLine(), style: (field, value) => this.styleSel(field, value),
             group: () => this.groupSel(), ungroup: () => this.ungroupSel(), lock: () => this.lockSel(),
             sides: patch => this.setEdgeSides(st.sel[0], patch), straighten: () => this.clearBends(st.sel[0]),
+            chooseImage: () => { if (this.imageRef.current) this.imageRef.current.click(); },
+            removeImage: () => { const id = st.sel[0]; this.pushHistory(); this.setNodes(a => a.map(q => (q.id === id ? without(q, 'file') : q))); },
+            copyImage: () => this.copyImage(),
             noIcon: () => { const id = st.sel[0]; this.pushHistory(); this.setNodes(a => a.map(q => (q.id === id ? without(q, 'icon') : q))); },
             reverse: () => {
               const id = st.sel[0];
@@ -249,6 +264,7 @@ export default class Editor extends Canvas(Exporter(Project(Commands(Pointer(His
 
         <Toast toast={st.toast} />
         <input ref={this.fileRef} type="file" accept=".json,application/json" onChange={this.onFile} hidden />
+        <input ref={this.imageRef} type="file" accept="image/*" onChange={this.onImageFile} hidden />
       </div>
     );
   }

@@ -194,7 +194,7 @@ export const Canvas = Base => class extends Base {
     const panTool = st.tool === 'hand' || st.space;
     const cursor = panTool ? (st.panning ? 'grabbing' : 'grab') : st.tool === 'select' ? 'default' : 'crosshair';
     return (
-      <div ref={this.setCanvas} className="canvas" onPointerDown={this.onDown} onDoubleClick={this.onDbl} onContextMenu={e => e.preventDefault()} style={{ cursor }}>
+      <div ref={this.setCanvas} className="canvas" onPointerDown={this.onDown} onDoubleClick={this.onDbl} onDragOver={this.onDragOver} onDrop={this.onDrop} onContextMenu={e => e.preventDefault()} style={{ cursor }}>
         <svg width="100%" height="100%" style={{ display: 'block' }}>
           <defs>
             <pattern id="fp-minor" width={g} height={g} patternUnits="userSpaceOnUse" patternTransform={ptf}><path d={`M${g} 0 L0 0 0 ${g}`} fill="none" stroke={t.minor} strokeWidth={2 / k} /></pattern>

@@ -164,3 +164,33 @@ describe('newNode', () => {
     expect(F.newNode('door', { x: 0, y: 0, w: 60, h: 60 }).rot).toBe(0);
   });
 });
+
+describe('image files', () => {
+  const PNG = 'data:image/png;base64,iVBORw0KGgo=';
+  const img = (id, file) => ({ ...box(id, 0, 0), type: 'image', file });
+
+  it('keeps the files that image shapes use', () => {
+    const d = F.cleanDoc(doc([sheet([img('a', 'f1')])], { files: { f1: PNG, f2: PNG } }));
+    expect(d.files).toEqual({ f1: PNG });
+    expect(d.sheets[0].nodes[0].file).toBe('f1');
+  });
+
+  it('removes a file that is not a raster image', () => {
+    const d = F.cleanDoc(doc([sheet([img('a', 'f1')])], { files: { f1: 'data:image/svg+xml;base64,PHN2Zz4=' } }));
+    expect(d.files).toBeUndefined();
+    expect(d.sheets[0].nodes[0].file).toBeUndefined();
+  });
+
+  it('removes the file link of a shape whose file is missing', () => {
+    const d = F.cleanDoc(doc([sheet([img('a', 'nope')])]));
+    expect(d.sheets[0].nodes[0].file).toBeUndefined();
+  });
+
+  it('leaves out unused files before a save', () => {
+    const d = doc([sheet([img('a', 'f1')])], { files: { f1: PNG, f2: PNG } });
+    expect(F.pruneFiles(d).files).toEqual({ f1: PNG });
+    const clean = doc([sheet([img('a', 'f1')])], { files: { f1: PNG } });
+    expect(F.pruneFiles(clean)).toBe(clean);
+    expect(F.pruneFiles(doc([sheet([])], { files: { f1: PNG } })).files).toBeUndefined();
+  });
+});
