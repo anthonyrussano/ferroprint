@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
+    "lint": "eslint .",
     "icons": "node scripts/cloud-icons.mjs"
   },
   "dependencies": {
@@ -17,6 +18,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
     "svgo": "^4.1.0",
     "vite": "^8.3.3",
     "vitest": "^5.0.3"

@@ -81,10 +81,11 @@ npm install
 npm run dev
 ```
 
-To run the tests, run:
+To run the tests and the linter, run:
 
 ```sh
 npm test
+npm run lint
 ```
 
 The tests are in `test/`. They use Vitest and run in Node.
@@ -98,7 +99,7 @@ npm run preview
 
 ## Deploy
 
-The workflow in `.github/workflows/pages.yml` runs the tests, builds the app and publishes `dist/` to GitHub Pages on every push to `main`. If a test fails, the workflow stops and the site does not change. The build uses relative asset paths, so it works from any repository name.
+The workflow in `.github/workflows/pages.yml` runs the linter and the tests, builds the app and publishes `dist/` to GitHub Pages on every push to `main`. If a test fails, the workflow stops and the site does not change. The build uses relative asset paths, so it works from any repository name.
 
 ## Project layout
 
@@ -111,6 +112,12 @@ The workflow in `.github/workflows/pages.yml` runs the tests, builds the app and
 | `src/templates.js` | Starter templates |
 | `src/share.js` | Share links: the project compressed into the URL |
 | `scripts/cloud-icons.mjs` | Converts the official cloud icons to line art |
-| `src/Editor.jsx` | Editor state, pointer and keyboard input, history, sheets, files and autosave |
+| `src/Editor.jsx` | Editor state, lifecycle and layout |
+| `src/editor/pointer.js` | Pan, zoom, select, move, resize, connect and draw with the pointer |
+| `src/editor/commands.js` | Label editing, commands on the selection, and the keyboard |
+| `src/editor/project.js` | Autosave, sheets, templates, share links and JSON files |
+| `src/editor/history.js` | Undo and redo |
+| `src/editor/exporter.js` | PNG and SVG export |
+| `src/editor/canvas.jsx` | The sheet, the selection overlay and the label editor |
 | `src/chrome.jsx` | Toolbars, inspector, panels, title block and status bar |
 | `src/storage.js` | Safe access to `localStorage` |
