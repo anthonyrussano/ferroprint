@@ -306,7 +306,7 @@ export const Project = Base => class extends Base {
     const doc = raw && F.cleanDoc(raw);
     if (!doc) { this.flash('This share link is damaged or incomplete. Ask for a new link.', 5000); return; }
     doc.sheets = doc.sheets.map(sh => ({ ...sh, view: null }));
-    // On a first visit, the shared project takes the place of the example project.
+    // On a first visit, the shared project takes the place of the blank project.
     if (this._fresh && !this.undoStack.length) { this._fresh = false; this.showProject(this.projectId, doc, null, 'Opened a shared project'); return; }
     this.setState({ incoming: doc, panel: 'incoming' });
   }

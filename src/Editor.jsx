@@ -30,7 +30,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     this.tabId = F.uid();
     setTabProject(this.projectId);
     this.state = {
-      doc: boot.doc || (boot.fresh ? F.exampleDoc() : F.blankDoc()),
+      doc: boot.doc || F.blankDoc(),
       tool: 'select', sel: [], hover: null, editing: null, marquee: null, guides: [], temp: null, draft: null,
       snap: ui.snap !== false, dims: ui.dims !== false, mode: ui.mode === 'white' ? 'white' : 'blue', clean: ui.clean === true,
       recent: Array.isArray(ui.recent) ? ui.recent.filter(isLibraryTool).slice(0, RECENT_MAX) : ['stairs', 'sofa', 'cloud'],
@@ -41,7 +41,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
       save: boot.store.kind === 'none' ? 'off' : 'saved'
     };
     this._savedJSON = boot.json;
-    // A first visit opens the example project. A share link then takes its place.
+    // A first visit opens a blank project. A share link then takes its place.
     this._fresh = boot.fresh;
     this.undoStack = []; this.redoStack = [];
     this.drag = null; this.clip = null; this.pasteN = 0;
