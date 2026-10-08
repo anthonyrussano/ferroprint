@@ -166,7 +166,8 @@ export const Canvas = Base => class extends Base {
     } else {
       const e = s.edges.find(q => q.id === ed.id), geo = e && F.edgeGeom(e, this.nodeMap(s), this.obstaclesFor(s));
       if (!geo) return null;
-      fs = 13; box = { x: geo.lp.x - 90, y: geo.lp.y - 18, w: 180, h: 36 };
+      const h = Math.max(36, 18 + 16 * String(ed.value).split('\n').length);
+      fs = 13; box = { x: geo.lp.x - 90, y: geo.lp.y - h / 2, w: 180, h };
     }
     const left = v.x + box.x * k, top = v.y + box.y * k, w = box.w * k, hh = box.h * k, fpx = fs * k;
     const lines = Math.max(1, String(ed.value).split('\n').length), lhp = fpx * L.lh;

@@ -394,3 +394,26 @@ describe('sequence diagrams', () => {
     expect(new Set(lifelines.map(l => l.group)).size).toBe(2);
   });
 });
+
+describe('line breaks in Mermaid labels', () => {
+  it('breaks lines at <br>, at \\n and at a new line in a markdown string', () => {
+    const g = parseMermaid('flowchart LR\n  a["`Line 1\n    Line 2`"] -->|One\\nTwo| b[Three<br/>Four]\n  b --> c["Five\\nSix"]');
+    expect(g.skipped).toBe(0);
+    expect([...g.nodes.values()].map(n => n.label)).toEqual(['Line 1\nLine 2', 'Three\nFour', 'Five\nSix']);
+    expect(g.edges[0].label).toBe('One\nTwo');
+  });
+
+  it('breaks lines in class names, state labels, messages and relations', () => {
+    expect(parseMermaid('classDiagram\n  class A["Long<br>name"]').nodes.get('A').label).toBe('Long\nname');
+    expect(parseMermaid('stateDiagram-v2\n  s1 --> s2 : a\\nb').edges[0].label).toBe('a\nb');
+    expect(parseMermaid('sequenceDiagram\n  A->>B: One<br/>Two').events[0].text).toBe('One\nTwo');
+    expect(parseMermaid('erDiagram\n  A ||--o{ B : "one\\ntwo"').edges[0].label).toBe('one\ntwo');
+  });
+
+  it('gives a message of more lines a taller row', async () => {
+    const one = await mermaidSheet('sequenceDiagram\n  A->>B: One\n  A->>B: Two', { L });
+    const two = await mermaidSheet('sequenceDiagram\n  A->>B: One<br>more\n  A->>B: Two', { L });
+    const last = sh => Math.max(...sh.nodes.filter(n => n.type === 'line' && !n.dashed).map(n => n.y));
+    expect(last(two) - last(one)).toBe(16);
+  });
+});

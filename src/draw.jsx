@@ -252,10 +252,14 @@ export function renderEdge(e, map, ctx, selected, geo = edgeGeom(e, map, ctx.obs
   const dashed = rel ? !!rel.dashed : e.dashed;
   let label = null;
   if (e.label) {
-    const fs = 13, str = txt(ctx, e.label), tw = measure(str, `${L.weight} ${fs}px ${L.family}`) + str.length * L.ls * fs + 12;
+    // A label can have more lines. Each line is 16 px below the one before it.
+    const fs = 13, lh = 16, rows = txt(ctx, e.label).split('\n'), font = `${L.weight} ${fs}px ${L.family}`;
+    const tw = Math.max(...rows.map(r => measure(r, font) + r.length * L.ls * fs)) + 12, th = 6 + lh * rows.length, y0 = geo.lp.y - (lh * (rows.length - 1)) / 2;
     label = [
-      <rect key="lb" x={geo.lp.x - tw / 2} y={geo.lp.y - 11} width={tw} height={22} fill={t.paper} />,
-      <text key="lt" x={geo.lp.x} y={geo.lp.y} textAnchor="middle" dominantBaseline="central" fill={c} fontFamily={L.family} fontWeight={L.weight} fontSize={fs} letterSpacing={L.ls * fs} pointerEvents="none">{str}</text>
+      <rect key="lb" x={geo.lp.x - tw / 2} y={geo.lp.y - th / 2} width={tw} height={th} fill={t.paper} />,
+      <text key="lt" x={geo.lp.x} y={y0} textAnchor="middle" dominantBaseline="central" fill={c} fontFamily={L.family} fontWeight={L.weight} fontSize={fs} letterSpacing={L.ls * fs} pointerEvents="none">
+        {rows.length > 1 ? rows.map((r, i) => <tspan key={i} x={geo.lp.x} dy={i ? lh : 0}>{r}</tspan>) : rows[0]}
+      </text>
     ];
   }
   return (

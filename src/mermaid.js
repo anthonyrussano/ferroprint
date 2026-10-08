@@ -23,6 +23,8 @@ function prepare(text) {
     if (t) title = t[1].trim().replace(/^["']|["']$/g, '');
     src = src.slice(fm[0].length);
   }
+  // A markdown string can run over more lines. Its line breaks become \n, so each statement stays on one line.
+  src = src.replace(/"`[\s\S]*?`"/g, m => m.replace(/[ \t]*\n[ \t]*/g, '\\n'));
   // Runs of spaces become one space, so no pattern below can try many ways to split a run.
   const all = src.split('\n').map(l => l.replace(/%%.*$/, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
   const lines = all.filter(l => l.length <= MAX_LINE);
@@ -34,14 +36,15 @@ export const isMermaid = text => {
   return lines.length > 0 && HEADER.test(lines[0]);
 };
 
-// Label text: quotes, line breaks, tags, entities and icons go. A markdown string, in backticks, also loses its marks.
+// Label text: quotes, tags, entities and icons go. <br> and \n become line breaks. A markdown string, in backticks,
+// also loses its marks.
 function cleanLabel(s) {
   let t = String(s).trim().replace(/^"([\s\S]*)"$/, '$1');
   if (/^`[\s\S]*`$/.test(t)) {
     t = t.slice(1, -1).replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1').replace(/~~(.+?)~~/g, '$1')
       .replace(/(^|[^\w*])\*(\S(?:.*?\S)?)\*(?![\w*])/g, '$1$2').replace(/(^|[^\w])_(\S(?:.*?\S)?)_(?!\w)/g, '$1$2');
   }
-  return t.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '')
+  return t.replace(/<br\s*\/?>/gi, '\n').replace(/\\n/g, '\n').replace(/<[^>]+>/g, '')
     .replace(/\bfa[bsrl]?:fa-[\w-]+\s*/g, '')
     .replace(/#quot;/g, '"').replace(/#(\d+);/g, (_, n) => (Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : ''))
     .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
@@ -271,7 +274,7 @@ function parseClass(lines) {
     if (decl) {
       const c = cls(decl[1]);
       if (decl[2]) c.label = generic(decl[1] + decl[2]);
-      if (decl[3]) c.label = decl[3];
+      if (decl[3]) c.label = cleanLabel(decl[3]);
       if (decl[4] != null) {
         const inner = (decl[5] || '').trim();
         if (decl[6]) inner.split(';').forEach(m => member(c, m));
@@ -633,7 +636,9 @@ const SEQ_TOP = 80, SEQ_GAP = 60, SEQ_ROW = 44, SEQ_LOOP = 30;
 // Each participant and its lifeline form a group, so they move together.
 function sequenceSheet(g, { L, caps, id }) {
   const font = `${L.weight} 16px ${L.family}`, small = `${L.weight} 13px ${L.family}`;
-  const width = (t, f, size) => { const str = caps ? t.toUpperCase() : t; return measure(str, f) + str.length * L.ls * size; };
+  // The width of the widest line of a text.
+  const width = (t, f, size) => Math.max(...String(t).split('\n').map(l => { const str = caps ? l.toUpperCase() : l; return measure(str, f) + str.length * L.ls * size; }));
+  const more = t => (String(t).split('\n').length - 1) * 16;
   const parts = [...g.parts.values()];
   const box = parts.map(p => (p.actor ? { w: 40, h: 60 } : { w: Math.max(100, up(width(p.label, font, 16) + 40)), h: 60 }));
   const index = new Map(parts.map((p, i) => [p.id, i]));
@@ -653,9 +658,10 @@ function sequenceSheet(g, { L, caps, id }) {
   const cx = pid => xs[index.get(pid)];
   const nodes = [], base = { sub: '', dashed: false, fill: 'none', size: 'm', flip: false };
   const line = (a, b, extra = {}) => nodes.push({ id: id(), type: 'line', ...pathFrom([a, b]), label: '', weight: 's', ...base, ...extra });
+  // A text of more lines grows up, so its last line stays at y.
   const text = (t, x, y, extra = {}) => {
-    const w = up(width(t, small, 13) + 24);
-    nodes.push({ id: id(), type: 'text', x: Math.round(x - w / 2), y: Math.round(y - 14), w, h: 28, label: t, ...base, size: 's', ...extra });
+    const w = up(width(t, small, 13) + 24), h = 28 + more(t);
+    nodes.push({ id: id(), type: 'text', x: Math.round(x - w / 2), y: Math.round(y + 14 - h), w, h, label: t, ...base, size: 's', ...extra });
   };
   let y = SEQ_TOP + 60 + 30;
   const active = new Map(), blocks = [];
@@ -674,14 +680,14 @@ function sequenceSheet(g, { L, caps, id }) {
       blocks.forEach(bl => bl.parts.add(e.from).add(e.to));
       if (a === b) {
         // A message to itself: a small loop at the right of the lifeline.
-        y += SEQ_ROW - 10;
+        y += SEQ_ROW - 10 + Math.max(0, more(e.label) - SEQ_LOOP / 2);
         line({ x: a, y }, { x: a + 40, y }, { dashed });
         line({ x: a + 40, y }, { x: a + 40, y: y + SEQ_LOOP }, { dashed });
         line({ x: a + 40, y: y + SEQ_LOOP }, { x: a, y: y + SEQ_LOOP }, { dashed, ...(arrow ? { arrow } : {}) });
-        if (e.label) { const w = up(width(e.label, small, 13) + 24); text(e.label, a + 52 + w / 2, y + SEQ_LOOP / 2); }
+        if (e.label) { const w = up(width(e.label, small, 13) + 24); text(e.label, a + 52 + w / 2, y + SEQ_LOOP / 2 + more(e.label) / 2); }
         y += SEQ_LOOP + 10;
       } else {
-        y += SEQ_ROW;
+        y += SEQ_ROW + more(e.label);
         line({ x: a, y }, { x: b, y }, { dashed, ...(arrow ? { arrow } : {}) });
         if (e.label) text(e.label, (a + b) / 2, y - 16);
       }
