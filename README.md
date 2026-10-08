@@ -104,6 +104,12 @@ npm install
 npm run dev
 ```
 
+To draw together with an agent or a text editor, start live mode. The open tab then follows `live/diagram.json`, and a change in the tab goes back to the file. [docs/LIVE.md](docs/LIVE.md) tells how it works and gives the file format.
+
+```sh
+npm run live
+```
+
 To run the tests and the linter, run:
 
 ```sh
@@ -145,6 +151,8 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/editor/project.js` | Autosave, sheets, templates, share links and JSON files |
 | `src/editor/history.js` | Undo and redo for the whole project |
 | `src/editor/exporter.js` | PNG and SVG export |
+| `src/editor/live.js` | Live mode in the tab: draws changes to the live file, and writes the changes in the tab to it |
+| `scripts/live-file.mjs` | Live mode in the development server: watches the live file and its Mermaid file |
 | `src/editor/canvas.jsx` | The sheet, the selection overlay and the label editor |
 | `src/chrome.jsx` | Toolbars, inspector, panels, title block and status bar |
 | `src/fonts.js` | The bundled fonts, and the font files that an exported SVG carries |

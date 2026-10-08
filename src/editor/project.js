@@ -20,7 +20,7 @@ export const Project = Base => class extends Base {
   persist() {
     const st = this.state;
     if (this._mode !== st.mode) { this._mode = st.mode; this.applyTheme(); }
-    if (this._doc !== st.doc) { this._doc = st.doc; this.scheduleSave(); }
+    if (this._doc !== st.doc) { this._doc = st.doc; this.scheduleSave(); this.liveChanged(); }
     const prefs = { snap: st.snap, dims: st.dims, mode: st.mode, clean: st.clean, recent: st.recent, pins: st.pins, project: this.projectId }, ui = JSON.stringify(prefs);
     if (ui !== this._ui) { this._ui = ui; saveUI(prefs); }
     this.ensureClouds();

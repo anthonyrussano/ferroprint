@@ -6,6 +6,7 @@
   "description": "A blueprint-style sketchpad for system diagrams, flows, wireframes and floor plans.",
   "scripts": {
     "dev": "vite",
+    "live": "vite --mode live",
     "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",

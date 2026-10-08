@@ -11,6 +11,7 @@ import { Project } from './editor/project.js';
 import { Exporter } from './editor/exporter.js';
 import { Canvas } from './editor/canvas.jsx';
 import { Clipboard } from './editor/clipboard.js';
+import { Live } from './editor/live.js';
 import { RECENT_MAX, PIN_MAX, isLibraryTool, without } from './editor/util.js';
 
 function textureFor(mode) {
@@ -20,7 +21,7 @@ function textureFor(mode) {
 }
 const TEXTURES = { blue: textureFor('blue'), white: textureFor('white') };
 
-export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(Pointer(History(Component))))))) {
+export default class Editor extends Canvas(Exporter(Live(Clipboard(Project(Commands(Pointer(History(Component)))))))) {
   // `boot` holds the store and the project to open. See boot() in storage.js.
   constructor(props) {
     super(props);
@@ -79,6 +80,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     this.openChannel();
     if (this.store.fallback) this.flash('The browser database did not open, so this visit saves to localStorage. The next start moves the projects into the database.', 9000);
     this.checkShared();
+    this.openLive();
     // A cloud set arrives after the first render, so the sheet draws again when one loads.
     this.offCloud = onCloudLoad(() => { this.cloudGen++; this.forceUpdate(); });
     this.persist();
@@ -104,6 +106,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     document.removeEventListener('paste', this.onPaste);
     if (this.offCloud) this.offCloud();
     this.closeChannel();
+    this.closeLive();
     if (this._saveT) this.flushSave();
     [this._toastT, this._armT].forEach(clearTimeout);
   }
