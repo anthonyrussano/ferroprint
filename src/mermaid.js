@@ -333,14 +333,15 @@ function parseState(lines) {
     return g.nodes.get(id);
   };
   let note = null, notes = 0;
-  const addNote = (target, text) => {
+  // `place` is the side of the state where the note goes: left or right.
+  const addNote = (target, text, place) => {
     const id = `note${notes++}`;
     g.nodes.set(id, { id, label: cleanLabel(text), shape: 'note', sub: '', groups: inGroups(), defined: true });
-    g.edges.push({ from: id, to: state(target).id, label: '', dashed: true, arrow: 'none', note: true });
+    g.edges.push({ from: id, to: state(target).id, label: '', dashed: true, arrow: 'none', note: true, place });
   };
   lines.slice(1).forEach(line => {
     if (note) {
-      if (/^end note$/i.test(line)) { addNote(note.target, note.text.join('\n')); note = null; } else note.text.push(line);
+      if (/^end note$/i.test(line)) { addNote(note.target, note.text.join('\n'), note.place); note = null; } else note.text.push(line);
       return;
     }
     const d = line.match(/^direction\s+(TB|TD|BT|LR|RL)$/i);
@@ -369,8 +370,8 @@ function parseState(lines) {
       g.edges.push({ from: a.id, to: b.id, label: m[3] ? cleanLabel(m[3]) : '', dashed: false, arrow: 'end' });
       return;
     }
-    m = line.match(/^note\s+(?:left|right)\s+of\s+([\w.-]+)\s*(?::\s*(.*))?$/i);
-    if (m) { if (m[2] != null) addNote(m[1], m[2]); else note = { target: m[1], text: [] }; return; }
+    m = line.match(/^note\s+(left|right)\s+of\s+([\w.-]+)\s*(?::\s*(.*))?$/i);
+    if (m) { const place = m[1].toLowerCase(); if (m[3] != null) addNote(m[2], m[3], place); else note = { target: m[2], text: [], place }; return; }
     // A description goes under the name of the state.
     m = line.match(/^([\w.-]+)\s*:\s*(.+)$/);
     if (m) { const n = state(m[1]); n.defined = true; n.sub = n.sub ? `${n.sub} · ${cleanLabel(m[2])}` : cleanLabel(m[2]); return; }
@@ -583,6 +584,8 @@ export async function mermaidSheet(text, { L, caps = true, id = () => Math.rando
     // Connectors of one kind can share a port. The sheet drops these fields.
     out.kind = [e.rel || '', e.dashed ? 'dashed' : '', e.arrow || 'end', e.note ? 'note' : ''].join('|');
     if (e.minlen > 1) out.minlen = e.minlen;
+    // A note goes beside its state, on the side that the Mermaid text names.
+    if (e.place) out.place = e.place;
     if (e.rel) out.rel = e.rel;
     if (e.m1) out.m1 = e.m1;
     if (e.m2) out.m2 = e.m2;
@@ -596,7 +599,7 @@ export async function mermaidSheet(text, { L, caps = true, id = () => Math.rando
     groups,
     edges: edges.map(e => ({
       id: e.id, from: flip.has(e.id) ? e.to : e.from, to: flip.has(e.id) ? e.from : e.to, label: labelSize(e.label, L, caps),
-      kind: e.kind, minlen: e.minlen
+      kind: e.kind, minlen: e.minlen, place: e.place
     }))
   });
   nodes.forEach(n => { const p = plan.pos.get(n.id); n.x = p.x; n.y = p.y; });
@@ -702,7 +705,8 @@ function sequenceSheet(g, { L, caps, id }) {
       let x;
       if (e.at === 'over') { size.w = Math.max(size.w, hi - lo + 60); x = (lo + hi) / 2 - size.w / 2; } else x = e.at === 'right of' ? hi + 20 : lo - 20 - size.w;
       y += 16;
-      nodes.push({ id: id(), type: 'note', x: Math.round(x), y, ...size, label: e.text, ...base });
+      // A note filled with the paper color hides the lifelines that run under it.
+      nodes.push({ id: id(), type: 'note', x: Math.round(x), y, ...size, label: e.text, ...base, fill: 'paper' });
       e.who.forEach(w => blocks.forEach(bl => bl.parts.add(w)));
       y += size.h;
       return;

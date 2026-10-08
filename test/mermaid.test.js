@@ -331,6 +331,19 @@ describe('state diagrams', () => {
   });
 });
 
+describe('state notes', () => {
+  it('puts a note beside its state, on the side that the text names', async () => {
+    const sh = await mermaidSheet('stateDiagram-v2\n  A --> B\n  note right of A : Right\n  note left of B\n    Left\n  end note', { L });
+    const by = Object.fromEntries(sh.nodes.map(n => [n.label, n]));
+    const mid = n => n.y + n.h / 2;
+    expect(by.Right.x).toBeGreaterThanOrEqual(by.A.x + by.A.w);
+    expect(by.Left.x + by.Left.w).toBeLessThanOrEqual(by.B.x);
+    expect(mid(by.Right)).toBe(mid(by.A));
+    const link = sh.edges.find(e => e.from === by.Right.id);
+    expect(link).toMatchObject({ fromSide: 'left', toSide: 'right' });
+  });
+});
+
 describe('entity relationship diagrams', () => {
   const src = `erDiagram
     CUSTOMER ||--o{ ORDER : places
@@ -386,6 +399,8 @@ describe('sequence diagrams', () => {
     expect(by('actor').length).toBe(1);
     expect(by('zone').map(z => z.label)).toEqual(['loop']);
     expect(by('note').length).toBe(1);
+    // A note filled with the paper color hides the lifelines under it.
+    expect(by('note')[0].fill).toBe('paper');
     expect(by('box').some(b => b.w === 12)).toBe(true);
     expect(by('text').map(t => t.label)).toEqual(['1. Ask', '2. Answer', '3. Think', '4. Gone']);
     const lifelines = by('line').filter(l => l.dashed && l.w === 0);

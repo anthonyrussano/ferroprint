@@ -604,7 +604,7 @@ function cleanNode(n, ids) {
   const out = {
     id, type, x: n.x, y: n.y, w: Math.max(0, n.w), h: Math.max(0, n.h),
     label: str(n.label), sub: str(n.sub), dashed: !!n.dashed,
-    fill: oneOf(n.fill, ['none', 'tint', 'hatch'], 'none'),
+    fill: oneOf(n.fill, ['none', 'tint', 'hatch', 'paper'], 'none'),
     size: oneOf(n.size, ['s', 'm', 'l'], type === 'zone' ? 's' : 'm'),
     flip: !!n.flip
   };

@@ -31,11 +31,14 @@ function labelEls(n, ctx, o) {
   return els;
 }
 
+// Tint and hatch let the grid show through. Paper takes the color of the paper, so it hides what lies under the shape.
+const fillOf = (n, t) => (n.fill === 'tint' ? t.tint : n.fill === 'hatch' ? 'url(#fp-hatch)' : n.fill === 'paper' ? t.paper : 'none');
+
 // A library symbol draws in its own unrotated box. The transform turns and mirrors it into the node box.
 function renderSymbol(n, ctx, sym) {
   const { t } = ctx, rot = n.rot || 0, side = rot % 180 !== 0;
   const lw = side ? n.h : n.w, lh = side ? n.w : n.h, cx = n.x + n.w / 2, cy = n.y + n.h / 2;
-  const fill = n.fill === 'tint' ? t.tint : n.fill === 'hatch' ? 'url(#fp-hatch)' : 'none';
+  const fill = fillOf(n, t);
   const P = makePen(t, fill, n.dashed ? '7 5' : undefined, false);
   const hb = hitBox(n), k = [<rect key="hit" x={hb.x} y={hb.y} width={Math.max(hb.w, 1)} height={Math.max(hb.h, 1)} fill="transparent" />];
   k.push(<g key="s" transform={`translate(${cx} ${cy}) rotate(${rot})${n.flip ? ' scale(-1 1)' : ''} translate(${-lw / 2} ${-lh / 2})`}>{sym.draw(lw, lh, P)}</g>);
@@ -64,7 +67,7 @@ function renderCloud(n, ctx) {
 // A UML class box: an optional stereotype and the name, then the attributes, then the operations.
 function renderClass(n, ctx) {
   const { t, L } = ctx, c = classLayout(n, L, ctx.caps), { x, y, w, h } = n;
-  const fill = n.fill === 'tint' ? t.tint : n.fill === 'hatch' ? 'url(#fp-hatch)' : 'none';
+  const fill = fillOf(n, t);
   const y1 = y + c.head, y2 = y1 + c.attrsH;
   const k = [
     <rect key="hit" x={x} y={y} width={Math.max(w, 1)} height={Math.max(h, 1)} fill="transparent" />,
@@ -91,7 +94,7 @@ export function renderNode(n, ctx) {
   if (sym) return renderSymbol(n, ctx, sym);
   const { t, L } = ctx;
   const { x, y, w } = n, hh = n.h, cx = x + w / 2, cy = y + hh / 2;
-  const fill = n.fill === 'tint' ? t.tint : n.fill === 'hatch' ? 'url(#fp-hatch)' : 'none';
+  const fill = fillOf(n, t);
   const dash = n.dashed ? (n.type === 'zone' ? '10 6' : '7 5') : undefined;
   const S = { stroke: t.ink, strokeWidth: 1.6, fill, strokeDasharray: dash, strokeLinejoin: 'miter' };
   const hit = <rect key="hit" x={x} y={y} width={Math.max(w, 1)} height={Math.max(hh, 1)} fill="transparent" />;

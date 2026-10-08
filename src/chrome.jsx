@@ -379,7 +379,7 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
         </section>
         <section>
           {!NOLINE[n.type] && <Seg label="LINE" opts={SOLID} value={!!n.dashed} onChange={v => set({ dashed: v })} />}
-          {!NOFILL[n.type] && <Seg label="FILL" opts={[['none', 'None'], ['tint', 'Tint'], ['hatch', 'Hatch']]} value={n.fill || 'none'} onChange={v => set({ fill: v })} />}
+          {!NOFILL[n.type] && <Seg label="FILL" opts={[['none', 'None'], ['tint', 'Tint'], ['hatch', 'Hatch'], ['paper', 'Paper']]} value={n.fill || 'none'} onChange={v => set({ fill: v })} />}
           {!LABELLESS[n.type] && <Seg label="TEXT" opts={[['s', 'S'], ['m', 'M'], ['l', 'L']]} value={n.size || 'm'} onChange={v => set({ size: v })} />}
           {(n.type === 'path' || n.type === 'line') && <Seg label="WEIGHT" opts={[['s', 'Fine'], ['m', 'Medium'], ['l', 'Wall']]} value={n.weight || 'm'} onChange={v => set({ weight: v })} />}
           {n.type === 'line' && <Seg label="ARROW" opts={ARROWS} value={n.arrow || 'none'} onChange={v => set({ arrow: v === 'none' ? undefined : v })} />}
@@ -480,7 +480,7 @@ export function Inspector({ nodes, edges, nodeById, fmt, setNode, setEdge, act }
         <section>
           <div className="caption">STYLE · EVERY SELECTED ITEM</div>
           {styled.dashed.length > 0 && <Seg label="LINE" opts={SOLID} value={same(styled.dashed, x => !!x.dashed)} onChange={v => act.style('dashed', v)} />}
-          {styled.fill.length > 0 && <Seg label="FILL" opts={[['none', 'None'], ['tint', 'Tint'], ['hatch', 'Hatch']]} value={same(styled.fill, x => x.fill || 'none')} onChange={v => act.style('fill', v)} />}
+          {styled.fill.length > 0 && <Seg label="FILL" opts={[['none', 'None'], ['tint', 'Tint'], ['hatch', 'Hatch'], ['paper', 'Paper']]} value={same(styled.fill, x => x.fill || 'none')} onChange={v => act.style('fill', v)} />}
           {styled.size.length > 0 && <Seg label="TEXT" opts={[['s', 'S'], ['m', 'M'], ['l', 'L']]} value={same(styled.size, x => x.size || 'm')} onChange={v => act.style('size', v)} />}
           {styled.arrow.length > 0 && <Seg label="ARROW" opts={ARROWS} value={same(styled.arrow, x => x.arrow || 'none')} onChange={v => act.style('arrow', v)} />}
           {styled.route.length > 0 && <Seg label="ROUTE" opts={[['elbow', 'Elbow'], ['straight', 'Straight'], ['curve', 'Curve']]} value={same(styled.route, x => x.route)} onChange={v => act.style('route', v)} />}

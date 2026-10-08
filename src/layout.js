@@ -5,8 +5,9 @@
 //
 // Input:  nodes  [{ id, w, h, group }]   `group` is the id of the innermost group, or null.
 //         groups [{ id, parent, pkg, tab }]  `tab` is the size { w, h } of the tab with the name of the group.
-//         edges  [{ id, from, to, label: { w, h } | null, kind }]  `from` and `to` are shape or group ids.
+//         edges  [{ id, from, to, label: { w, h } | null, kind, place }]  `from` and `to` are shape or group ids.
 //                `kind` tells connectors apart: connectors of one kind can share a port, like a bus.
+//                `place` is 'left' or 'right' for a note beside a shape: `from` is the note, `to` the shape.
 //         A node can have `slide`: 'all' when a connector can meet any side away from its middle, or 'tb'
 //         for the top and bottom sides only, and `margin`: the space that a port keeps from a corner.
 //         dir    'TB', 'BT', 'LR' or 'RL'
@@ -31,6 +32,8 @@ const ZONE_PAD = 24, ZONE_PAD_TOP = 44;
 const PASS = 8;
 // The space that a run keeps from the tab with the name of a zone.
 const TAB_CLEAR = 4;
+// The space between a shape and a note beside it.
+const NOTE_GAP = 40;
 const GRID = 10;
 const round = v => Math.round(v / GRID) * GRID;
 
@@ -62,6 +65,19 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
     for (let gr = groupById.get(n.group); gr; gr = groupById.get(gr.parent)) { if (!firstIn.has(gr.id)) firstIn.set(gr.id, n.id); lastIn.set(gr.id, n.id); }
   });
   const stand = (id, out) => (byId.has(id) ? id : (out ? lastIn : firstIn).get(id) || null);
+  // A note beside a shape goes in one box with the shape, across the ranks. dagre cannot lay out a connector inside
+  // one rank, so the layout splits the box again after dagre. A note with other connectors is a plain shape.
+  const beside = new Map(), noted = new Set(), links = new Map();
+  edges.forEach(e => [e.from, e.to].forEach(id => links.set(id, (links.get(id) || 0) + 1)));
+  if (!side) edges.forEach(e => {
+    const note = byId.get(e.from), host = byId.get(e.to);
+    if (!['left', 'right'].includes(e.place) || !note || !host || links.get(note.id) !== 1 || note.group !== host.group || noted.has(host.id)) return;
+    const at = beside.get(host.id) || {};
+    if (at[e.place]) return;
+    at[e.place] = { note, e };
+    beside.set(host.id, at);
+    noted.add(note.id);
+  });
 
   const layout = rs => {
     const g = new dagre.graphlib.Graph({ compound: true, multigraph: true });
@@ -69,11 +85,18 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
     g.setDefaultEdgeLabel(() => ({}));
     groups.forEach(gr => g.setNode(gr.id, {}));
     groups.forEach(gr => { if (groupById.has(gr.parent)) g.setParent(gr.id, gr.parent); });
-    nodes.forEach(n => { g.setNode(n.id, { width: n.w, height: n.h }); if (groupById.has(n.group)) g.setParent(n.id, n.group); });
+    const wide = n => { const at = beside.get(n.id) || {}, all = [at.left, at.right].filter(Boolean).map(x => x.note); return { w: n.w + all.reduce((t, x) => t + x.w + NOTE_GAP, 0), h: Math.max(n.h, ...all.map(x => x.h)) }; };
+    nodes.forEach(n => {
+      if (noted.has(n.id)) return;
+      const { w, h } = wide(n);
+      g.setNode(n.id, { width: w, height: h });
+      if (groupById.has(n.group)) g.setParent(n.id, n.group);
+    });
     const laid = [];
     // dagre puts the targets of one shape right to left in the order of their connectors. Mermaid shows them
     // left to right, so the connectors go in last first.
     [...edges].reverse().forEach(e => {
+      if (noted.has(e.from) && beside.has(e.to)) { laid.push({ e, v: e.from, w: e.to, attached: true }); return; }
       const v = stand(e.from, true), w = stand(e.to, false);
       if (!v || !w || v === w) return;
       const minlen = e.minlen || 1;
@@ -81,6 +104,20 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       laid.push({ e, v, w });
     });
     dagre.layout(g);
+    // The shape and its notes take their places in the box that dagre laid out.
+    beside.forEach((at, id) => {
+      const d = g.node(id), n = byId.get(id);
+      let x = d.x - wide(n).w / 2;
+      [at.left, n, at.right].forEach(part => {
+        if (!part) return;
+        const m = part.note || part;
+        if (m === n) d.x = x + n.w / 2;
+        else { g.setNode(m.id, { width: m.w, height: m.h, x: x + m.w / 2, y: d.y }); if (groupById.has(m.group)) g.setParent(m.id, m.group); }
+        x += m.w + NOTE_GAP;
+      });
+      d.width = n.w;
+      d.height = n.h;
+    });
     alignChains(g, laid);
     return route(g, laid);
   };
@@ -107,7 +144,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
       forward.forEach(f => {
         if (straight(f) || (outs.get(f.v) || []).length !== 1 || (ins.get(f.w) || []).length !== 1) return;
         const keeps = id => [...(outs.get(id) || []), ...(ins.get(id) || [])].filter(x => x !== f && straight(x)).length;
-        const mover = !keeps(f.v) ? f.v : !keeps(f.w) ? f.w : null;
+        const mover = !keeps(f.v) && !beside.has(f.v) ? f.v : !keeps(f.w) && !beside.has(f.w) ? f.w : null;
         if (!mover) return;
         const target = at(mover === f.v ? f.w : f.v).x;
         if (!room(mover, target)) return;
@@ -147,7 +184,7 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
           ...nodes.filter(n => !within(n.group, grp.id)).map(shape),
           ...[...zones].filter(([id]) => !within(id, grp.id)).map(([, z]) => z),
           ...laid.filter(({ v, w }) => !within(byId.get(v).group, grp.id) && !within(byId.get(w).group, grp.id))
-            .flatMap(({ e, v, w }) => (gr.edge({ v, w, name: e.id }).points || []).map(p => ({ x: p.x, y: p.y, w: 0, h: 0 })))
+            .flatMap(({ e, v, w }) => ((gr.edge({ v, w, name: e.id }) || {}).points || []).map(p => ({ x: p.x, y: p.y, w: 0, h: 0 })))
         ].filter(o => o.y < y1 && o.y + o.h > y0);
         const roomL = Math.max(0, Math.floor((x0 - Math.max(-Infinity, ...others.filter(o => o.x + o.w <= x0).map(o => o.x + o.w + GRID))) / GRID) * GRID);
         const roomR = Math.max(0, Math.floor((Math.min(Infinity, ...others.filter(o => o.x >= x1).map(o => o.x - GRID)) - x1) / GRID) * GRID);
@@ -230,8 +267,10 @@ export async function layoutDiagram({ nodes, edges, groups = [], dir = 'TB' }, {
     });
 
     // 1. The chain of each connector: its ports, and the points where dagre keeps a channel free for it.
-    const chains = laid.map(({ e, v, w }) => {
+    const chains = laid.map(({ e, v, w, attached }) => {
       const S = box.get(v), T = box.get(w), d = gr.edge({ v, w, name: e.id });
+      // A note beside its shape: a straight run between the sides that face each other.
+      if (attached) return { e, sides: S.cx < T.cx ? ['right', 'left'] : ['left', 'right'] };
       if (!byId.has(e.from) || !byId.has(e.to)) {
         // A connector to a zone: fixed sides from the boxes, so it can get its own point on a busy side.
         // The editor routes it.
