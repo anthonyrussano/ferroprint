@@ -8,6 +8,8 @@ const CLIP_TYPE = 'ferroprint/shapes';
 const MAX_IMAGE_PX = 1600;
 // The longest side of a new image shape on the sheet.
 const MAX_IMAGE_SIZE = 480;
+// The longest side of a logo, in pixels. It is large enough for a sharp logo in a PDF.
+const MAX_LOGO_PX = 800;
 const MAX_TEXT = 4000;
 // A browser that does not send clipboard events for the page gets the in-memory clipboard after this delay.
 const KEY_FALLBACK_MS = 60;
@@ -23,17 +25,35 @@ const textSelected = () => {
 };
 const dataURL = blob => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = bad; r.readAsDataURL(blob); });
 
+// An image that the browser can draw on a canvas. createImageBitmap cannot read SVG, so an SVG file loads as an
+// image element.
+async function drawable(blob) {
+  try { return await createImageBitmap(blob); } catch { /* An SVG file, or a file that is not an image. */ }
+  if (!/svg/.test(blob.type)) return null;
+  const url = URL.createObjectURL(blob), img = new Image();
+  try {
+    img.src = url;
+    await img.decode();
+    return img.naturalWidth && img.naturalHeight ? { img, width: img.naturalWidth, height: img.naturalHeight, svg: true } : null;
+  } catch {
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 // Reads an image file. A large image is scaled down and stored as WebP, or as PNG when the browser cannot write WebP.
-export async function readImage(blob) {
-  let bmp;
-  try { bmp = await createImageBitmap(blob); } catch { return null; }
-  const sc = Math.min(1, MAX_IMAGE_PX / Math.max(bmp.width, bmp.height));
+// An SVG file becomes a bitmap with its long side at `maxPx`, so a small drawing stays sharp.
+export async function readImage(blob, maxPx = MAX_IMAGE_PX) {
+  const bmp = await drawable(blob);
+  if (!bmp) return null;
+  const sc = bmp.svg ? maxPx / Math.max(bmp.width, bmp.height) : Math.min(1, maxPx / Math.max(bmp.width, bmp.height));
   const w = Math.max(1, Math.round(bmp.width * sc)), h = Math.max(1, Math.round(bmp.height * sc));
   let out = blob;
-  if (sc < 1 || blob.size > 400e3 || !/^image\/(png|jpeg|webp|gif)$/.test(blob.type)) {
+  if (sc !== 1 || blob.size > 400e3 || !/^image\/(png|jpeg|webp|gif)$/.test(blob.type)) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
-    c.getContext('2d').drawImage(bmp, 0, 0, w, h);
+    c.getContext('2d').drawImage(bmp.img || bmp, 0, 0, w, h);
     out = await new Promise(ok => c.toBlob(ok, 'image/webp', 0.86));
     if (!out || out.type !== 'image/webp') out = await new Promise(ok => c.toBlob(ok, 'image/png'));
   }
@@ -198,6 +218,19 @@ export const Clipboard = Base => class extends Base {
         }
       };
     });
+  }
+  // The logo of the project takes the place of the Ferroprint logo in the title block and in exports.
+  async setLogo(file) {
+    const img = await readImage(file, MAX_LOGO_PX);
+    if (!img) { this.flash('Could not read that image. Use a PNG, JPEG, WebP, GIF or SVG file.', 4000); return; }
+    const fid = F.uid();
+    this.pushHistory();
+    this.setState(st => ({ doc: { ...st.doc, files: { ...(st.doc.files || {}), [fid]: img.url }, meta: { ...st.doc.meta, logo: fid } } }));
+  }
+  // The Ferroprint logo comes back. The next save leaves out the file of the old logo.
+  clearLogo() {
+    this.pushHistory();
+    this.setState(st => ({ doc: { ...st.doc, meta: without(st.doc.meta, 'logo') } }));
   }
   addText(text, at) {
     const lines = text.replace(/\r\n?/g, '\n').trim().split('\n').slice(0, 60), label = lines.join('\n').slice(0, MAX_TEXT);

@@ -270,3 +270,22 @@ describe('bends', () => {
     expect(g.d).toBe('M100 30 L250 30 L250 330 L400 330');
   });
 });
+
+describe('project logo', () => {
+  const png = 'data:image/png;base64,iVBORw0KGgo=';
+  it('keeps a logo with its file, and drops a logo without one', () => {
+    const doc = { ...F.blankDoc(), files: { logo1: png } };
+    doc.meta = { ...doc.meta, logo: 'logo1' };
+    const clean = F.cleanDoc(JSON.parse(JSON.stringify(doc)));
+    expect(clean.meta.logo).toBe('logo1');
+    expect(clean.files.logo1).toBe(png);
+    expect(F.cleanDoc({ ...doc, files: {} }).meta.logo).toBeUndefined();
+    expect(F.cleanDoc({ ...doc, meta: { ...doc.meta, logo: '../x' } }).meta.logo).toBeUndefined();
+  });
+
+  it('keeps the logo file when it prunes files, and drops it when the logo goes', () => {
+    const doc = { ...F.blankDoc(), files: { logo1: png } };
+    expect(F.pruneFiles({ ...doc, meta: { ...doc.meta, logo: 'logo1' } }).files.logo1).toBe(png);
+    expect(F.pruneFiles(doc).files).toBeUndefined();
+  });
+});

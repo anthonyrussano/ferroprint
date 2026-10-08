@@ -43,6 +43,7 @@ Open the app: https://bjarneo.github.io/ferroprint/
 - Share a project with a link. The link holds the whole project in its `#` part, which the browser does not send to a server.
 - Draw freehand strokes and walls. Hold Shift to snap a wall to 45°.
 - Organize a project in numbered sheets, each with its own title block and drawing units (px, ft or m).
+- Put your own logo in the title block. Click the Ferroprint logo at the bottom right and pick a PNG, JPEG, WebP, GIF or SVG file. The logo is part of the project, so exports and share links show it too. To use the Ferroprint logo again, point at the logo and click **×**.
 - Undo and redo every change to the project with `Ctrl Z` and `Ctrl Shift Z`: shapes, connectors, sheets, the title block and the setup. Undo goes back to the sheet where the change happened. It does not change the pan or the zoom.
 - Switch between a blueprint (white on blue) and a whiteprint (blue on white) look.
 - Export a sheet as PNG or SVG with a title block. Export all sheets as one PDF, with one sheet on each A3 page and a bookmark for each sheet. Export the full project as JSON.

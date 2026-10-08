@@ -684,19 +684,20 @@ export function cleanFiles(raw, used) {
   });
   return out;
 }
-const usedFiles = sheets => new Set(sheets.flatMap(s => s.nodes.filter(n => n.file).map(n => n.file)));
+// The files that the shapes use, and the logo of the project.
+const usedFiles = (sheets, meta) => new Set([...sheets.flatMap(s => s.nodes.filter(n => n.file).map(n => n.file)), ...(meta && meta.logo ? [meta.logo] : [])]);
 // Returns a valid document, or null when the input is not a Ferroprint project.
 export function cleanDoc(raw) {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sheets)) return null;
   const sheetIds = new Set();
   let sheets = raw.sheets.map((s, i) => cleanSheet(s, sheetIds, 'A-' + (101 + i))).filter(Boolean);
   if (!sheets.length) return null;
-  const files = cleanFiles(raw.files, usedFiles(sheets));
+  const m = raw.meta && typeof raw.meta === 'object' ? raw.meta : {}, logo = typeof m.logo === 'string' && ID.test(m.logo) ? m.logo : '';
+  const files = cleanFiles(raw.files, usedFiles(sheets, { logo }));
   // An image shape without its file shows the placeholder.
   sheets = sheets.map(s => (s.nodes.some(n => n.file && !files[n.file]) ? { ...s, nodes: s.nodes.map(n => (n.file && !files[n.file] ? dropKey(n, 'file') : n)) } : s));
-  const m = raw.meta && typeof raw.meta === 'object' ? raw.meta : {};
   const doc = {
-    meta: { project: str(m.project), drawnBy: str(m.drawnBy), date: str(m.date), rev: str(m.rev) },
+    meta: { project: str(m.project), drawnBy: str(m.drawnBy), date: str(m.date), rev: str(m.rev), ...(logo && files[logo] ? { logo } : {}) },
     settings: cleanSettings(raw.settings),
     sheets,
     active: sheets.some(s => s.id === raw.active) ? raw.active : sheets[0].id
@@ -708,7 +709,7 @@ const dropKey = (o, key) => { const { [key]: _, ...rest } = o; return rest; };
 // Leaves out the image files that no shape uses any more, for example after a delete.
 export function pruneFiles(doc) {
   if (!doc.files) return doc;
-  const used = usedFiles(doc.sheets), ids = Object.keys(doc.files);
+  const used = usedFiles(doc.sheets, doc.meta), ids = Object.keys(doc.files);
   if (ids.every(id => used.has(id))) return doc;
   const files = Object.fromEntries(ids.filter(id => used.has(id)).map(id => [id, doc.files[id]]));
   return Object.keys(files).length ? { ...doc, files } : dropKey(doc, 'files');

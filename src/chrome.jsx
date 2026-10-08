@@ -731,7 +731,13 @@ export function TitleBlock({ wide, tb }) {
       </div>
       {field('drawn br', 'DRAWN BY', tb.drawn, tb.setDrawn, 'Initials')}
       {field('mono small br', 'DATE', tb.date, tb.setDate)}
-      <div className="cell span2 maker"><Mark size={24} /><Wordmark size={14} /></div>
+      <div className="cell span2 maker">
+        <button type="button" className="logo-pick" title={tb.logo ? 'Change the logo' : 'Use your own logo'} onClick={tb.chooseLogo}>
+          {tb.logo ? <img src={tb.logo} alt="Project logo" /> : <><Mark size={24} /><Wordmark size={14} /></>}
+          <span className="logo-hint">{tb.logo ? 'CHANGE LOGO' : 'YOUR LOGO'}</span>
+        </button>
+        {tb.logo && <button type="button" className="logo-clear" title="Use the Ferroprint logo again" aria-label="Remove the logo" onClick={tb.clearLogo}>×</button>}
+      </div>
     </div>
   );
 }

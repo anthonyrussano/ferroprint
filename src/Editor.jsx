@@ -48,9 +48,9 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     this.pointers = new Map();
     this.fontCache = {}; this.fontGen = 0;
     this.nodeCache = new WeakMap(); this.edgeCache = new WeakMap(); this.classFit = new WeakMap(); this.obsCache = new WeakMap(); this.cloudGen = 0;
-    this.barRef = createRef(); this.fileRef = createRef(); this.imageRef = createRef();
+    this.barRef = createRef(); this.fileRef = createRef(); this.imageRef = createRef(); this.logoRef = createRef();
     this.canvasEl = null; this.contentEl = null;
-    ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash', 'onCopy', 'onCut', 'onPaste', 'onDragOver', 'onDrop', 'onImageFile'].forEach(k => { this[k] = this[k].bind(this); });
+    ['onDown', 'onMove', 'onUp', 'onDbl', 'onWheel', 'onKey', 'onKeyUp', 'onResize', 'setCanvas', 'setContent', 'onFile', 'onBlurWin', 'onHide', 'onHash', 'onCopy', 'onCut', 'onPaste', 'onDragOver', 'onDrop', 'onImageFile', 'onLogoFile'].forEach(k => { this[k] = this[k].bind(this); });
     // Stable handlers let the library panel skip renders while the pointer moves.
     this.lib = { pick: id => this.pickSymbol(id), pin: id => this.togglePin(id), drag: (id, e) => this.startPlace(id, e), close: () => this.setState({ panel: null }) };
     this.tpl = { add: id => this.addTemplate(id), mermaid: text => this.importMermaid(text).then(ok => ok || this.flash('Ferroprint reads Mermaid flowcharts, and class, state, entity relationship and sequence diagrams. This text is not one of them.', 5000)), blankDoc: () => { this.setState({ panel: null }); this.newDoc(); }, blankSheet: () => { this.setState({ panel: null }); this.addSheet(); }, close: this.lib.close };
@@ -147,6 +147,11 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
     const f = e.target.files && e.target.files[0], id = this.state.sel[0];
     e.target.value = '';
     if (f && id) this.setImage(id, f);
+  }
+  onLogoFile(e) {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (f) this.setLogo(f);
   }
   flash(msg, ms = 2400, action = null) {
     this.setState({ toast: { msg, action } });
@@ -255,7 +260,10 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
               rev: meta.rev, setRev: val => this.setMeta('rev', val),
               num: s.number, setNum: updS('number'), name: s.name, setName: updS('name'),
               scale: F.scaleLabel(s.unit, g), sheetOf: `${idx + 1} OF ${d.sheets.length}`,
-              cycleUnit: () => { this.pushHistory(); this.updSheet(q => ({ unit: F.UNITS[(F.UNITS.indexOf(q.unit) + 1) % F.UNITS.length] })); }
+              cycleUnit: () => { this.pushHistory(); this.updSheet(q => ({ unit: F.UNITS[(F.UNITS.indexOf(q.unit) + 1) % F.UNITS.length] })); },
+              logo: meta.logo && d.files ? d.files[meta.logo] || null : null,
+              chooseLogo: () => { if (this.logoRef.current) this.logoRef.current.click(); },
+              clearLogo: () => this.clearLogo()
             }}
           />
         )}
@@ -275,6 +283,7 @@ export default class Editor extends Canvas(Exporter(Clipboard(Project(Commands(P
         <Toast toast={st.toast} />
         <input ref={this.fileRef} type="file" accept=".json,.mmd,.mermaid,.md,application/json,text/markdown,text/plain" onChange={this.onFile} hidden />
         <input ref={this.imageRef} type="file" accept="image/*" onChange={this.onImageFile} hidden />
+        <input ref={this.logoRef} type="file" accept="image/*" onChange={this.onLogoFile} hidden />
       </div>
     );
   }

@@ -62,7 +62,12 @@ export const Exporter = Base => class extends Base {
     o += cell(x, y, 'PROJECT', meta.project, 24) + cell(x + c1, y, 'DWG NO', s.number, 12, true) + cell(x + c2, y, 'REV', meta.rev, 12, true);
     o += cell(x, y + r, 'TITLE', s.name, 24) + cell(x + c1, y + r, 'SCALE', F.scaleLabel(s.unit, this.g()), 14, true) + cell(x + c2, y + r, 'SHEET', `${idx + 1} OF ${d.sheets.length}`, 12, true);
     o += cell(x, y + 2 * r, 'DRAWN BY', meta.drawnBy, 11) + cell(x + 95, y + 2 * r, 'DATE', meta.date, 12, true);
-    o += logoSVG(x + c1 + (w - c1) / 2, y + 2 * r + r / 2, 12, t.ink, t.accent) + '</g>';
+    // The logo of the project takes the place of the Ferroprint logo.
+    const logo = meta.logo && d.files ? d.files[meta.logo] : null;
+    o += logo
+      ? `<image href="${logo}" x="${x + c1 + 8}" y="${y + 2 * r + 4}" width="${w - c1 - 16}" height="${r - 8}" preserveAspectRatio="xMidYMid meet"/>`
+      : logoSVG(x + c1 + (w - c1) / 2, y + 2 * r + r / 2, 12, t.ink, t.accent);
+    o += '</g>';
     return o;
   }
   // An SVG of a sheet. A full sheet has a border and a title block. With `only`, the SVG holds the selected items on plain paper.
