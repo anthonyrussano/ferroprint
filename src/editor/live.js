@@ -3,6 +3,8 @@
 // A Mermaid file next to it lays out the open sheet again. scripts/live-file.mjs is the server side.
 import * as F from '../engine.js';
 import { mermaidSheet } from '../mermaid.js';
+import { loadCloud, cloudIcon, cloudProvider } from '../cloud.js';
+import { sharedPayload } from '../share.js';
 
 // The file that the server watches, or undefined when live mode is off. The build never has it.
 const LIVE = import.meta.env.FERROPRINT_LIVE;
@@ -11,15 +13,27 @@ export const LIVE_ID = 'live';
 // The wait after a change in the tab before the file gets it, so a drag writes the file once.
 const WRITE_DELAY = 300;
 
+// A tab that opens a share link shows the shared project, so it stays out of the live session.
+// The address loses its share link soon after the start, so this reads it when the module loads.
+const OPENED_SHARED = typeof location !== 'undefined' && !!sharedPayload();
+
 // The file leaves out the pan and zoom of each sheet, so a pan or a zoom does not rewrite it.
-const fileText = doc => JSON.stringify({ ...doc, sheets: doc.sheets.map(({ view: _, ...s }) => s) }, null, 2) + '\n';
+export const fileText = doc => JSON.stringify({ ...doc, sheets: doc.sheets.map(({ view: _, ...s }) => s) }, null, 2) + '\n';
 const summary = doc => doc.sheets.map(s => ({ id: s.id, number: s.number, name: s.name, nodes: s.nodes.length, edges: s.edges.length }));
+// The cloud icon keys that no loaded icon set has. Such a shape draws a dashed placeholder.
+export const missingIcons = (doc, has) => [...new Set(doc.sheets.flatMap(s => s.nodes.map(n => n.icon).filter(Boolean)))].filter(k => !has(k)).sort();
 const count = (raw, key) => (Array.isArray(raw && raw.sheets) ? raw.sheets.reduce((n, s) => n + (s && Array.isArray(s[key]) ? s[key].length : 0), 0) : 0);
 
 export const Live = Base => class extends Base {
   openLive() {
     const hot = import.meta.hot;
     if (!LIVE || !hot) return;
+    if (OPENED_SHARED) {
+      // The message about the shared project shows first, for 4 seconds, so this one follows it.
+      clearTimeout(this._liveWait);
+      this._liveWait = setTimeout(() => this.flash(`This tab opened a share link, so it does not follow ${LIVE}. Open the plain address to follow it.`, 7000), 4200);
+      return;
+    }
     this._liveOn = m => { this.onLive(m); };
     hot.on('ferroprint:live', this._liveOn);
     // React mounts the editor twice in development, and the server answers each hello.
@@ -66,13 +80,19 @@ export const Live = Base => class extends Base {
     if (!doc) { this.flash(`${LIVE} is not a Ferroprint project. The tab keeps its drawing.`, 6000); return null; }
     return { raw, doc };
   }
-  report(raw, doc, message) {
+  // Reports what the tab drew, so an agent that cannot see the tab can check its change.
+  async report(raw, doc, message) {
     const dropped = { nodes: count(raw, 'nodes') - count(doc, 'nodes'), edges: count(raw, 'edges') - count(doc, 'edges') };
-    const ok = !dropped.nodes && !dropped.edges;
-    this.liveStatus({
-      ok, message: ok ? message : `${message} The tab left out ${dropped.nodes} shapes and ${dropped.edges} connectors that are not valid.`,
-      dropped, active: doc.active, sheets: summary(doc)
-    });
+    const unknownIcons = await this.unknownIcons(doc);
+    const notes = [];
+    if (dropped.nodes || dropped.edges) notes.push(`The tab left out ${dropped.nodes} shapes and ${dropped.edges} connectors that are not valid.`);
+    if (unknownIcons.length) notes.push(`${unknownIcons.length} cloud icon keys do not exist and draw a placeholder: ${unknownIcons.join(', ')}.`);
+    this.liveStatus({ ok: !notes.length, message: [message, ...notes].join(' '), dropped, unknownIcons, active: doc.active, sheets: summary(doc) });
+  }
+  async unknownIcons(doc) {
+    const keys = missingIcons(doc, () => false);
+    await Promise.all([...new Set(keys.map(cloudProvider))].map(p => loadCloud(p).catch(() => null)));
+    return missingIcons(doc, k => !!cloudIcon(k));
   }
   // The first message: open the live project from the file, or start the file from the project in this browser.
   async startLive(text) {
@@ -139,6 +159,6 @@ export const Live = Base => class extends Base {
     this.pushHistory();
     this.updSheet(s => ({ nodes: sh.nodes, edges: sh.edges, view: null, name: s.name === 'Untitled sheet' ? sh.name : s.name }));
     const skipped = r.skipped ? ` It skipped ${r.skipped} lines that it cannot read.` : '';
-    this.liveStatus({ ok: true, message: `Laid out sheet ${cur.number} from the Mermaid file.${skipped}`, active: cur.id, sheets: summary({ sheets: [{ ...cur, ...sh }] }) });
+    this.liveStatus({ ok: true, message: `Laid out sheet ${cur.number} from the Mermaid file.${skipped}`, dropped: { nodes: 0, edges: 0 }, unknownIcons: [], active: cur.id, sheets: summary({ sheets: [{ ...cur, ...sh }] }) });
   }
 };
