@@ -2,7 +2,7 @@
 
 Live mode keeps the open tab and a project file on disk in step. An agent or a text editor writes the file, and the tab draws the change within a second. A change in the tab goes back to the file. Use it to draw a diagram together with an agent, for example in a meeting.
 
-Live mode is for development only. The build and the published app do not have it.
+Live mode is for development only. The build and the published app never run it.
 
 ## Start
 
@@ -26,7 +26,7 @@ The `live/` folder is in `.gitignore`.
 | --- | --- | --- |
 | `live/diagram.json` | The agent and the tab | The whole project. A change to it redraws the tab. A change in the tab writes it again. |
 | `live/diagram.mmd` | The agent | Mermaid text. A change to it lays out the open sheet again, with the shapes and connectors of the Mermaid diagram. |
-| `live/diagram.status.json` | The tab | What the tab did with the last change: `ok`, a `message`, the shapes and connectors it `dropped`, the `active` sheet and a summary of each sheet. |
+| `live/diagram.status.json` | The tab | What the tab did with the last change: `ok`, a `message`, the shapes and connectors it `dropped`, the cloud icon keys that do not exist (`unknownIcons`), the `active` sheet and a summary of each sheet. |
 
 ## How the tab takes a change
 
@@ -39,16 +39,48 @@ The `live/` folder is in `.gitignore`.
 - The tab shows the sheet in `active` when `active` changes. To show a new sheet to the user, set `active` to its id.
 - If the user opens a different project in the tab, the tab stops following the file. A change to the file then shows a message with **SHOW**.
 - Take turns. If the user and the agent change the project at the same moment, the change that comes last replaces the other one.
+- A tab that opens a share link (`#p=...`) shows the shared project and does not follow the file. Only a tab at the plain address follows it.
+- A change to the Ferroprint source code reloads the tab. The drawing stays, but the undo history of the tab is lost.
 
 ## Workflow for agents
 
 1. Read `live/diagram.json`.
 2. To start a sheet with a good layout, write Mermaid to `live/diagram.mmd`. Ferroprint lays out the open sheet with dagre and routes the connectors.
 3. To change details, edit `live/diagram.json`: add cloud icons, move shapes, add zones, sheets and notes. Make small edits, and keep the ids.
-4. Wait about 1 second, then read `live/diagram.status.json`. If `ok` is `false`, fix the problem that `message` names.
-5. Read `live/diagram.json` again before the next edit, because the tab can change it.
+4. Wait about 1 second, then read `live/diagram.status.json`. If `ok` is `false`, fix the problem that `message` names: shapes that are not valid, or cloud icon keys that do not exist.
+5. To see the result, export it (see [Export without the browser](#export-without-the-browser)) and look at the PNG. The status file says what the tab drew, not whether the layout is clear.
+6. Read `live/diagram.json` again before the next edit, because the tab can change it.
 
 The user exports from the tab: PNG, SVG, PDF (all sheets) or JSON.
+
+## Export without the browser
+
+```sh
+npm run export -- live/diagram.json --out export
+npm run export -- live/diagram.json --out export --format png,svg,pdf,json --theme blue
+npm run export -- live/diagram.json --sheet A-102
+npm run export -- flow.mmd --out export
+```
+
+- The input is a Ferroprint JSON project, a Mermaid file, or a Markdown file with a ` ```mermaid ` block.
+- `--format` takes `png`, `svg`, `pdf` (all sheets in one file) and `json`. The default is `png,svg`. Each sheet gets its own PNG and SVG.
+- `--theme` is `white` (default, blue on white) or `blue` (white on blue).
+- The command starts its own development server with live mode off and uses the export buttons of the app. It never joins a live session, so it is safe while `npm run live` runs.
+- It needs Chromium. It uses the newest Chromium in the Playwright cache (`~/.cache/ms-playwright`), then Chrome or Chromium on the system. Give another one with `--chrome PATH` or `FERROPRINT_CHROME`. To install one, run `npx playwright install chromium`.
+
+Do not export by pointing a browser at the live server: the browser tab then joins the live session.
+
+## Layout tips
+
+These rules come from drawing real diagrams in live mode. Export and look at the PNG after each larger change.
+
+- **Text.** `label` wraps to the width of the shape and breaks at `\n`. `sub` is always one line in small type, and it does not wrap or break at `\n`. Keep `sub` short, such as a resource name, and put longer text in `label` or in a `note`.
+- **Notes.** Put the whole text of a `note` in `label`. The note wraps it. Use `fill: "tint"` to set a note apart. `hatch` makes the text hard to read.
+- **Cloud icons.** The label and the sublabel of a `cloud` shape go below the icon. A connector that leaves or enters the bottom of an icon runs through that text. Put an icon in a row above or below its partner, move it to one side, and connect the side that has no text: for example `fromSide: "right"` on the upper icon and `toSide: "top"` on the lower one.
+- **Connector labels.** A connector label sits in the middle of the path. Set `lt` (a share of the length, larger than 0 and smaller than 1) to move it, for example away from a zone border. Leave a label out when the shapes already say it.
+- **Shared runs.** Connectors that go to the same shape can join in one long run. Give each one a different `toSide`.
+- **Free text.** Use a `text` shape with `size: "s"` for a short remark inside a zone.
+- **Title block.** A long sheet `name` is cut off in the title block of an export. Keep it to about 24 characters.
 
 ## Project format
 
@@ -84,7 +116,8 @@ The user exports from the tab: PNG, SVG, PDF (all sheets) or JSON.
 | Field | Values |
 | --- | --- |
 | `id`, `type`, `x`, `y`, `w`, `h` | Necessary. |
-| `label`, `sub` | The text, and a second line in small type. `\n` breaks a line. |
+| `label` | The text. It wraps to the width of the shape, and `\n` breaks a line. |
+| `sub` | A second line in small type. It is always one line: it does not wrap, and `\n` does not break it. |
 | `dashed` | `true` for a dashed outline. |
 | `fill` | `none`, `tint`, `hatch` or `paper`. |
 | `size` | The text size: `s`, `m` or `l`. |
@@ -152,6 +185,7 @@ A zone without an `icon`, such as an availability zone, is a plain dashed zone.
 | `label` | The text on the connector. |
 | `route` | `elbow` (default), `straight` or `curve`. An elbow connector without bends goes around the shapes in its way. |
 | `arrow` | `end` (default), `both` or `none`. |
+| `lt` | Where the label sits along the connector, as a share of its length: larger than 0 and smaller than 1. The default is the middle. |
 | `dashed` | `true` for a dashed line, for example async calls. |
 | `fromSide`, `toSide` | `top`, `right`, `bottom` or `left`, to fix where the connector meets the shape. |
 | `rel` | UML: `assoc`, `inherit`, `realize`, `depend`, `aggregate` or `compose`. `m1` and `m2` are multiplicities such as `0..*`. |

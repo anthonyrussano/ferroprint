@@ -110,6 +110,8 @@ To draw together with an agent or a text editor, start live mode. The open tab t
 npm run live
 ```
 
+To export a project or a Mermaid file as PNG, SVG, PDF or JSON without opening the browser, run `npm run export -- FILE`. It needs Chromium; see [docs/LIVE.md](docs/LIVE.md#export-without-the-browser).
+
 To run the tests and the linter, run:
 
 ```sh
@@ -153,6 +155,7 @@ The workflow in `.github/workflows/pages.yml` runs the linter and the tests, bui
 | `src/editor/exporter.js` | PNG and SVG export |
 | `src/editor/live.js` | Live mode in the tab: draws changes to the live file, and writes the changes in the tab to it |
 | `scripts/live-file.mjs` | Live mode in the development server: watches the live file and its Mermaid file |
+| `scripts/export.mjs` | `npm run export`: exports a project or a Mermaid file with a headless Chromium |
 | `src/editor/canvas.jsx` | The sheet, the selection overlay and the label editor |
 | `src/chrome.jsx` | Toolbars, inspector, panels, title block and status bar |
 | `src/fonts.js` | The bundled fonts, and the font files that an exported SVG carries |
